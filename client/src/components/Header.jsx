@@ -7,9 +7,9 @@ export default function Header() {
 
   const titles = {
     dashboard: 'Dashboard',
+    'primary-data': 'Grade-Wise Academic Data Setup',
     faculties: 'Faculty Management',
     venues: 'Venue & Classroom Management',
-    classes: 'Classes & Subject Configuration',
     timetable: 'Time Table Scheduler'
   };
 

@@ -4,11 +4,11 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Toast from './components/Toast';
 
-import Dashboard from './pages/Dashboard';
+import Dashboard from './pages/Dashboard/Dashboard';
+import PrimaryDataEntry from './pages/PrimaryDataEntry';
 import FacultyManagement from './pages/FacultyManagement';
 import VenueManagement from './pages/VenueManagement';
-import ClassSubjectConfig from './pages/ClassSubjectConfig';
-import TimetableScheduler from './pages/TimetableScheduler';
+import TimetableScheduler from './pages/TimeTable/TimetableScheduler';
 
 function AppContent() {
   const { activeTab } = useSchool();
@@ -17,12 +17,13 @@ function AppContent() {
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard />;
+      case 'primary-data':
+      case 'classes':
+        return <PrimaryDataEntry />;
       case 'faculties':
         return <FacultyManagement />;
       case 'venues':
         return <VenueManagement />;
-      case 'classes':
-        return <ClassSubjectConfig />;
       case 'timetable':
         return <TimetableScheduler />;
       default:

@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
-import { useSchool } from '../context/SchoolContext';
-import ManualEditModal from '../components/ManualEditModal';
+import { useSchool } from '../../context/SchoolContext';
+import ManualEditModal from '../../components/ManualEditModal';
+import Modal from '../../components/Modal';
 import {
   Sparkles,
   Printer,
   Download,
-  Filter,
   Tv,
   AlertTriangle,
-  Clock,
   UserCheck,
-  Building
+  Building,
+  Coffee,
+  Utensils
 } from 'lucide-react';
 
 export default function TimetableScheduler() {
@@ -31,6 +32,10 @@ export default function TimetableScheduler() {
 
   const [slotToEdit, setSlotToEdit] = useState(null);
 
+  // Scope Modal State
+  const [isScopeModalOpen, setIsScopeModalOpen] = useState(false);
+  const [genScope, setGenScope] = useState('all'); // 'all' | 'class' | 'grade'
+
   // Filter timetable entries based on active view mode
   const getSlot = (day, periodId) => {
     if (viewMode === 'class') {
@@ -48,6 +53,8 @@ export default function TimetableScheduler() {
     }
     return null;
   };
+
+  const activeClassObj = classes.find(c => c.id === selectedClassId) || classes[0];
 
   // CSV Export handler
   const handleExportCSV = () => {
@@ -77,6 +84,18 @@ export default function TimetableScheduler() {
   // Print view handler
   const handlePrint = () => {
     window.print();
+  };
+
+  // Run Generator with selected scope
+  const runScopeGenerator = () => {
+    if (genScope === 'class') {
+      handleAutoGenerateTimetable({ targetClassId: selectedClassId });
+    } else if (genScope === 'grade') {
+      handleAutoGenerateTimetable({ targetGrade: activeClassObj?.grade });
+    } else {
+      handleAutoGenerateTimetable({ targetClassId: 'all', targetGrade: 'all' });
+    }
+    setIsScopeModalOpen(false);
   };
 
   return (
@@ -163,7 +182,7 @@ export default function TimetableScheduler() {
 
         {/* Action Buttons */}
         <div style={{ display: 'flex', gap: '0.6rem' }}>
-          <button className="btn btn-emerald" onClick={handleAutoGenerateTimetable}>
+          <button className="btn btn-emerald" onClick={() => setIsScopeModalOpen(true)}>
             <Sparkles size={16} /> Auto-Generate Timetable
           </button>
           <button className="btn btn-secondary" onClick={handleExportCSV} title="Export CSV">
@@ -182,7 +201,10 @@ export default function TimetableScheduler() {
             <tr>
               <th className="day-col">Day / Period</th>
               {periods.map((p) => {
-                const isLunchAfter = p.id === 4;
+                const isShortBreak1 = p.id === 2;
+                const isLunchBreak = p.id === 4;
+                const isShortBreak2 = p.id === 6;
+
                 return (
                   <React.Fragment key={p.id}>
                     <th>
@@ -191,17 +213,46 @@ export default function TimetableScheduler() {
                         {p.time}
                       </div>
                     </th>
-                    {isLunchAfter && (
+
+                    {isShortBreak1 && (
                       <th
                         style={{
-                          width: '70px',
-                          background: 'rgba(245, 158, 11, 0.1)',
-                          color: 'var(--accent-amber)',
-                          fontSize: '0.75rem',
+                          width: '65px',
+                          background: '#eff6ff',
+                          color: '#1d4ed8',
+                          fontSize: '0.72rem',
                           fontWeight: 700
                         }}
                       >
-                        LUNCH BREAK
+                        ☕ BREAK
+                      </th>
+                    )}
+
+                    {isLunchBreak && (
+                      <th
+                        style={{
+                          width: '75px',
+                          background: '#fffbeb',
+                          color: '#b45309',
+                          fontSize: '0.72rem',
+                          fontWeight: 700
+                        }}
+                      >
+                        🍱 LUNCH
+                      </th>
+                    )}
+
+                    {isShortBreak2 && (
+                      <th
+                        style={{
+                          width: '65px',
+                          background: '#eff6ff',
+                          color: '#1d4ed8',
+                          fontSize: '0.72rem',
+                          fontWeight: 700
+                        }}
+                      >
+                        ☕ BREAK
                       </th>
                     )}
                   </React.Fragment>
@@ -227,7 +278,9 @@ export default function TimetableScheduler() {
 
                 {periods.map((p) => {
                   const slot = getSlot(day, p.id);
-                  const isLunchAfter = p.id === 4;
+                  const isShortBreak1 = p.id === 2;
+                  const isLunchBreak = p.id === 4;
+                  const isShortBreak2 = p.id === 6;
 
                   return (
                     <React.Fragment key={p.id}>
@@ -235,7 +288,6 @@ export default function TimetableScheduler() {
                         {slot ? (
                           <div
                             className="period-cell"
-                            style={{ borderLeftColor: slot.subjectColor || 'var(--primary)' }}
                             onClick={() => setSlotToEdit(slot)}
                             title="Click to edit cell slot"
                           >
@@ -252,7 +304,7 @@ export default function TimetableScheduler() {
                               </span>
 
                               {slot.venueType === 'projector' && (
-                                <span title="Normal Class + Projector Room" style={{ color: '#c084fc' }}>
+                                <span title="Normal Class + Projector Room" style={{ color: '#7c3aed' }}>
                                   <Tv size={13} />
                                 </span>
                               )}
@@ -282,13 +334,62 @@ export default function TimetableScheduler() {
                         )}
                       </td>
 
-                      {/* Lunch Break column slot */}
-                      {isLunchAfter && (
+                      {/* Morning Short Break after Period 2 */}
+                      {isShortBreak1 && (
+                        <td>
+                          <div
+                            style={{
+                              background: '#eff6ff',
+                              border: '1px dashed #bfdbfe',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              textStyle: 'center',
+                              color: '#1d4ed8',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              height: '100%',
+                              borderRadius: 'var(--radius-sm)'
+                            }}
+                          >
+                            <div>
+                              ☕<br />Break
+                            </div>
+                          </div>
+                        </td>
+                      )}
+
+                      {/* Lunch Break after Period 4 */}
+                      {isLunchBreak && (
                         <td>
                           <div className="period-cell-lunch">
                             <div>
-                              🍱<br />
-                              Lunch
+                              🍱<br />Lunch
+                            </div>
+                          </div>
+                        </td>
+                      )}
+
+                      {/* Afternoon Short Break after Period 6 */}
+                      {isShortBreak2 && (
+                        <td>
+                          <div
+                            style={{
+                              background: '#eff6ff',
+                              border: '1px dashed #bfdbfe',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              textStyle: 'center',
+                              color: '#1d4ed8',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              height: '100%',
+                              borderRadius: 'var(--radius-sm)'
+                            }}
+                          >
+                            <div>
+                              ☕<br />Break
                             </div>
                           </div>
                         </td>
@@ -301,6 +402,120 @@ export default function TimetableScheduler() {
           </tbody>
         </table>
       </div>
+
+      {/* AUTO GENERATE SCOPE SELECTION MODAL */}
+      <Modal
+        isOpen={isScopeModalOpen}
+        onClose={() => setIsScopeModalOpen(false)}
+        title="Auto-Generate Timetable Scope"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+          <p style={{ fontSize: '0.88rem', color: 'var(--text-sub)' }}>
+            Select the target scope for auto-generating timetable period slots. Existing bookings for unselected classes will remain preserved without double-booking conflicts.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.85rem 1rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid',
+                borderColor: genScope === 'all' ? 'var(--primary)' : 'var(--border-color)',
+                background: genScope === 'all' ? '#eff6ff' : '#f8fafc',
+                cursor: 'pointer'
+              }}
+              onClick={() => setGenScope('all')}
+            >
+              <input
+                type="radio"
+                name="scope"
+                checked={genScope === 'all'}
+                onChange={() => setGenScope('all')}
+              />
+              <div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                  Entire School (All Classes)
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Auto-schedule all {classes.length} sections across the school simultaneously.
+                </div>
+              </div>
+            </label>
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.85rem 1rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid',
+                borderColor: genScope === 'grade' ? 'var(--primary)' : 'var(--border-color)',
+                background: genScope === 'grade' ? '#eff6ff' : '#f8fafc',
+                cursor: 'pointer'
+              }}
+              onClick={() => setGenScope('grade')}
+            >
+              <input
+                type="radio"
+                name="scope"
+                checked={genScope === 'grade'}
+                onChange={() => setGenScope('grade')}
+              />
+              <div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                  Specific Grade Level (Grade {activeClassObj?.grade || '10'})
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Re-schedule all sections in Grade {activeClassObj?.grade || '10'} only.
+                </div>
+              </div>
+            </label>
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.85rem 1rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid',
+                borderColor: genScope === 'class' ? 'var(--primary)' : 'var(--border-color)',
+                background: genScope === 'class' ? '#eff6ff' : '#f8fafc',
+                cursor: 'pointer'
+              }}
+              onClick={() => setGenScope('class')}
+            >
+              <input
+                type="radio"
+                name="scope"
+                checked={genScope === 'class'}
+                onChange={() => setGenScope('class')}
+              />
+              <div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                  Selected Class Only ({activeClassObj?.name || 'Grade 10-A'})
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Re-schedule timetable slots for {activeClassObj?.name || 'Grade 10-A'} specifically.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '1rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setIsScopeModalOpen(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-emerald" onClick={runScopeGenerator}>
+              <Sparkles size={16} /> Run Generator Now
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Cell Editor Modal */}
       <ManualEditModal

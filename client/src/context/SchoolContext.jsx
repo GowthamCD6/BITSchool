@@ -85,8 +85,16 @@ export function SchoolProvider({ children }) {
   };
 
   // Auto Generate Timetable
-  const handleAutoGenerateTimetable = () => {
-    const result = generateAutoTimetable({ faculties, venues, classes, subjects });
+  const handleAutoGenerateTimetable = (options = {}) => {
+    const result = generateAutoTimetable({
+      faculties,
+      venues,
+      classes,
+      subjects,
+      targetClassId: options.targetClassId || 'all',
+      targetGrade: options.targetGrade || 'all',
+      existingTimetable: timetable
+    });
     setTimetable(result.timetable);
     setTimetableStats(result.stats);
     showToast(`Timetable Auto-Scheduled! ${result.stats.allocatedSlots} slots allocated (${result.stats.utilizationRate}% Efficiency).`, 'success');
@@ -148,6 +156,38 @@ export function SchoolProvider({ children }) {
     showToast(`Class "${created.name}" created.`);
   };
 
+  const updateClass = (updatedClass) => {
+    setClasses(classes.map(c => c.id === updatedClass.id ? updatedClass : c));
+    showToast(`Class "${updatedClass.name}" updated.`);
+  };
+
+  const deleteClass = (classId) => {
+    const c = classes.find(item => item.id === classId);
+    setClasses(classes.filter(item => item.id !== classId));
+    showToast(`Class "${c?.name || ''}" removed.`, 'warning');
+  };
+
+  // Subject CRUD
+  const addSubject = (newSubj) => {
+    const created = {
+      ...newSubj,
+      id: `s_${Date.now()}`
+    };
+    setSubjects([...subjects, created]);
+    showToast(`Subject "${created.name}" (${created.code}) added.`);
+  };
+
+  const updateSubject = (updatedSubj) => {
+    setSubjects(subjects.map(s => s.id === updatedSubj.id ? updatedSubj : s));
+    showToast(`Subject "${updatedSubj.name}" updated.`);
+  };
+
+  const deleteSubject = (subjectId) => {
+    const s = subjects.find(subj => subj.id === subjectId);
+    setSubjects(subjects.filter(subj => subj.id !== subjectId));
+    showToast(`Subject "${s?.name || ''}" removed.`, 'warning');
+  };
+
   // Update a single Timetable cell slot
   const updateTimetableSlot = (slotId, newDetails) => {
     setTimetable(prev => prev.map(slot => {
@@ -199,6 +239,11 @@ export function SchoolProvider({ children }) {
         updateVenue,
         deleteVenue,
         addClass,
+        updateClass,
+        deleteClass,
+        addSubject,
+        updateSubject,
+        deleteSubject,
         updateTimetableSlot
       }}
     >

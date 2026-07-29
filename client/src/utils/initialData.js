@@ -3,13 +3,15 @@ export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Sa
 export const PERIODS = [
   { id: 1, name: 'Period 1', time: '08:30 - 09:15' },
   { id: 2, name: 'Period 2', time: '09:15 - 10:00' },
-  { id: 3, name: 'Period 3', time: '10:00 - 10:45' },
-  { id: 4, name: 'Period 4', time: '10:45 - 11:30' },
-  // Lunch break is placed between Period 4 and Period 5
-  { id: 5, name: 'Period 5', time: '12:15 - 01:00' },
-  { id: 6, name: 'Period 6', time: '01:00 - 01:45' },
-  { id: 7, name: 'Period 7', time: '01:45 - 02:30' },
-  { id: 8, name: 'Period 8', time: '02:30 - 03:15' },
+  // Morning Short Break after Period 2 (10:00 - 10:15)
+  { id: 3, name: 'Period 3', time: '10:15 - 11:00' },
+  { id: 4, name: 'Period 4', time: '11:00 - 11:45' },
+  // Lunch Break after Period 4 (11:45 - 12:30)
+  { id: 5, name: 'Period 5', time: '12:30 - 01:15' },
+  { id: 6, name: 'Period 6', time: '01:15 - 02:00' },
+  // Afternoon Short Break after Period 6 (02:00 - 02:15)
+  { id: 7, name: 'Period 7', time: '02:15 - 03:00' },
+  { id: 8, name: 'Period 8', time: '03:00 - 03:45' },
 ];
 
 export const VENUE_TYPES = [
@@ -30,7 +32,7 @@ export const INITIAL_CLASSES = [
 ];
 
 export const INITIAL_SUBJECTS = [
-  { id: 's1', code: 'MATH101', name: 'Mathematics', weeklyPeriods: 6, requiredVenueType: 'projector', color: '#4f46e5' },
+  { id: 's1', code: 'MATH101', name: 'Mathematics', weeklyPeriods: 8, requiredVenueType: 'projector', color: '#4f46e5' },
   { id: 's2', code: 'ENG101', name: 'English Literature', weeklyPeriods: 6, requiredVenueType: 'normal', color: '#2563eb' },
   { id: 's3', code: 'PHY101', name: 'Physics', weeklyPeriods: 5, requiredVenueType: 'projector', color: '#7c3aed' },
   { id: 's4', code: 'CHEM101', name: 'Chemistry', weeklyPeriods: 5, requiredVenueType: 'science_lab', color: '#059669' },
@@ -38,8 +40,8 @@ export const INITIAL_SUBJECTS = [
   { id: 's6', code: 'BIO101', name: 'Biology', weeklyPeriods: 4, requiredVenueType: 'science_lab', color: '#16a34a' },
   { id: 's7', code: 'HIST101', name: 'History & Civics', weeklyPeriods: 4, requiredVenueType: 'normal', color: '#d97706' },
   { id: 's8', code: 'GEO101', name: 'Geography', weeklyPeriods: 4, requiredVenueType: 'projector', color: '#ca8a04' },
-  { id: 's9', code: 'PE101', name: 'Physical Education', weeklyPeriods: 4, requiredVenueType: 'normal', color: '#dc2626' },
-  { id: 's10', code: 'ART101', name: 'Art & Craft', weeklyPeriods: 4, requiredVenueType: 'normal', color: '#db2777' }
+  { id: 's9', code: 'PE101', name: 'Physical Education', weeklyPeriods: 3, requiredVenueType: 'normal', color: '#dc2626' },
+  { id: 's10', code: 'ART101', name: 'Art & Craft', weeklyPeriods: 3, requiredVenueType: 'normal', color: '#db2777' }
 ];
 
 export const INITIAL_VENUES = [

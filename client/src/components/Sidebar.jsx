@@ -4,9 +4,9 @@ import {
   LayoutDashboard,
   Users,
   Building2,
-  BookOpen,
   CalendarDays,
   GraduationCap,
+  Layers,
   User as UserIcon
 } from 'lucide-react';
 
@@ -21,11 +21,11 @@ export default function Sidebar() {
       ]
     },
     {
-      title: 'ACADEMIC MANAGEMENT',
+      title: 'ACADEMIC SETUP & DATA ENTRY',
       items: [
+        { id: 'primary-data', label: 'Primary Data Entry', icon: Layers },
         { id: 'faculties', label: 'Faculty Management', icon: Users, badge: faculties.length },
         { id: 'venues', label: 'Venue & Classrooms', icon: Building2, badge: venues.length },
-        { id: 'classes', label: 'Classes & Subjects', icon: BookOpen },
       ]
     },
     {
