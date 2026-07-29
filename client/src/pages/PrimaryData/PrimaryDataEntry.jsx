@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useSchool } from '../context/SchoolContext';
+import { useSchool } from '../../context/SchoolContext';
 import {
   Layers,
   Plus,
@@ -15,7 +15,7 @@ import {
   FlaskConical,
   BookMarked
 } from 'lucide-react';
-import Modal from '../components/Modal';
+import Modal from '../../components/Modal';
 
 export default function PrimaryDataEntry() {
   const {

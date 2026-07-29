@@ -5,7 +5,7 @@ import Header from './components/Header';
 import Toast from './components/Toast';
 
 import Dashboard from './pages/Dashboard/Dashboard';
-import PrimaryDataEntry from './pages/PrimaryDataEntry';
+import PrimaryDataEntry from './pages/PrimaryData/PrimaryDataEntry';
 import FacultyManagement from './pages/FacultyManagement';
 import VenueManagement from './pages/VenueManagement';
 import TimetableScheduler from './pages/TimeTable/TimetableScheduler';

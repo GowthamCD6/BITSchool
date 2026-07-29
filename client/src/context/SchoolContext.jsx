@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import {
   DAYS,
   PERIODS,
@@ -11,6 +11,25 @@ import {
 import { generateAutoTimetable } from '../utils/timetableGenerator';
 
 const SchoolContext = createContext();
+
+// ── Helper: get Monday of the week for a given date ──
+function getMondayOfWeek(date) {
+  const d = new Date(date);
+  const dayOfWeek = d.getDay(); // 0=Sun, 1=Mon, ...
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // if Sunday, go back 6 days
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// ── Helper: format date to YYYY-MM-DD key string ──
+function toWeekKey(date) {
+  const d = new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 export function SchoolProvider({ children }) {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -34,24 +53,38 @@ export function SchoolProvider({ children }) {
     return saved ? JSON.parse(saved) : INITIAL_SUBJECTS;
   });
 
-  const [timetable, setTimetable] = useState(() => {
-    const saved = localStorage.getItem('bitschool_timetable');
-    if (saved) return JSON.parse(saved);
-    // Generate initial timetable
-    const generated = generateAutoTimetable({
-      faculties: INITIAL_FACULTIES,
-      venues: INITIAL_VENUES,
-      classes: INITIAL_CLASSES,
-      subjects: INITIAL_SUBJECTS
-    });
-    return generated.timetable;
+  // ── Active Week Key (Monday date string e.g. '2026-07-27') ──
+  const [activeWeekKey, setActiveWeekKey] = useState(() => {
+    const saved = localStorage.getItem('bitschool_active_week');
+    if (saved) return saved;
+    return toWeekKey(getMondayOfWeek(new Date()));
   });
+
+  // ── Week-keyed timetable store: { '2026-07-27': [...slots], ... } ──
+  const [weeklyTimetables, setWeeklyTimetables] = useState(() => {
+    const saved = localStorage.getItem('bitschool_weekly_timetables');
+    if (saved) return JSON.parse(saved);
+
+    // Migrate from old single timetable if it exists
+    const oldTT = localStorage.getItem('bitschool_timetable');
+    if (oldTT) {
+      const currentWeek = toWeekKey(getMondayOfWeek(new Date()));
+      return { [currentWeek]: JSON.parse(oldTT) };
+    }
+
+    return {};
+  });
+
+  // ── Derived: current week's timetable ──
+  const timetable = useMemo(() => {
+    return weeklyTimetables[activeWeekKey] || [];
+  }, [weeklyTimetables, activeWeekKey]);
 
   const [timetableStats, setTimetableStats] = useState({
     totalSlots: timetable.length,
     allocatedSlots: timetable.length,
     conflictCount: 0,
-    utilizationRate: 100
+    utilizationRate: timetable.length > 0 ? 100 : 0
   });
 
   const [toast, setToast] = useState(null);
@@ -74,8 +107,12 @@ export function SchoolProvider({ children }) {
   }, [subjects]);
 
   useEffect(() => {
-    localStorage.setItem('bitschool_timetable', JSON.stringify(timetable));
-  }, [timetable]);
+    localStorage.setItem('bitschool_weekly_timetables', JSON.stringify(weeklyTimetables));
+  }, [weeklyTimetables]);
+
+  useEffect(() => {
+    localStorage.setItem('bitschool_active_week', activeWeekKey);
+  }, [activeWeekKey]);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type, id: Date.now() });
@@ -84,8 +121,9 @@ export function SchoolProvider({ children }) {
     }, 3500);
   };
 
-  // Auto Generate Timetable
+  // Auto Generate Timetable — saves under the active week key
   const handleAutoGenerateTimetable = (options = {}) => {
+    const existingWeekSlots = weeklyTimetables[activeWeekKey] || [];
     const result = generateAutoTimetable({
       faculties,
       venues,
@@ -93,12 +131,32 @@ export function SchoolProvider({ children }) {
       subjects,
       targetClassId: options.targetClassId || 'all',
       targetGrade: options.targetGrade || 'all',
-      existingTimetable: timetable
+      existingTimetable: existingWeekSlots
     });
-    setTimetable(result.timetable);
+    setWeeklyTimetables(prev => ({
+      ...prev,
+      [activeWeekKey]: result.timetable
+    }));
     setTimetableStats(result.stats);
-    showToast(`Timetable Auto-Scheduled! ${result.stats.allocatedSlots} slots allocated (${result.stats.utilizationRate}% Efficiency).`, 'success');
+    showToast(`Timetable Auto-Scheduled for week ${activeWeekKey}! ${result.stats.allocatedSlots} slots allocated (${result.stats.utilizationRate}% Efficiency).`, 'success');
   };
+
+  // ── Delete a week's timetable ──
+  const deleteWeekTimetable = (weekKey) => {
+    setWeeklyTimetables(prev => {
+      const copy = { ...prev };
+      delete copy[weekKey];
+      return copy;
+    });
+    showToast(`Timetable for week ${weekKey} deleted.`, 'warning');
+  };
+
+  // ── Get all generated week keys sorted descending ──
+  const generatedWeekKeys = useMemo(() => {
+    return Object.keys(weeklyTimetables)
+      .filter(k => weeklyTimetables[k] && weeklyTimetables[k].length > 0)
+      .sort((a, b) => b.localeCompare(a));
+  }, [weeklyTimetables]);
 
   // Faculty CRUD
   const addFaculty = (newFaculty) => {
@@ -188,30 +246,34 @@ export function SchoolProvider({ children }) {
     showToast(`Subject "${s?.name || ''}" removed.`, 'warning');
   };
 
-  // Update a single Timetable cell slot
+  // Update a single Timetable cell slot (within active week)
   const updateTimetableSlot = (slotId, newDetails) => {
-    setTimetable(prev => prev.map(slot => {
-      if (slot.id === slotId) {
-        const subj = subjects.find(s => s.id === newDetails.subjectId);
-        const fac = faculties.find(f => f.id === newDetails.facultyId);
-        const ven = venues.find(v => v.id === newDetails.venueId);
+    setWeeklyTimetables(prev => {
+      const weekSlots = prev[activeWeekKey] || [];
+      const updatedSlots = weekSlots.map(slot => {
+        if (slot.id === slotId) {
+          const subj = subjects.find(s => s.id === newDetails.subjectId);
+          const fac = faculties.find(f => f.id === newDetails.facultyId);
+          const ven = venues.find(v => v.id === newDetails.venueId);
 
-        return {
-          ...slot,
-          subjectId: subj ? subj.id : slot.subjectId,
-          subjectName: subj ? subj.name : slot.subjectName,
-          subjectCode: subj ? subj.code : slot.subjectCode,
-          subjectColor: subj ? subj.color : slot.subjectColor,
-          facultyId: fac ? fac.id : slot.facultyId,
-          facultyName: fac ? fac.name : slot.facultyName,
-          venueId: ven ? ven.id : slot.venueId,
-          venueName: ven ? ven.name : slot.venueName,
-          venueRoomNo: ven ? ven.roomNo : slot.venueRoomNo,
-          venueType: ven ? ven.type : slot.venueType
-        };
-      }
-      return slot;
-    }));
+          return {
+            ...slot,
+            subjectId: subj ? subj.id : slot.subjectId,
+            subjectName: subj ? subj.name : slot.subjectName,
+            subjectCode: subj ? subj.code : slot.subjectCode,
+            subjectColor: subj ? subj.color : slot.subjectColor,
+            facultyId: fac ? fac.id : slot.facultyId,
+            facultyName: fac ? fac.name : slot.facultyName,
+            venueId: ven ? ven.id : slot.venueId,
+            venueName: ven ? ven.name : slot.venueName,
+            venueRoomNo: ven ? ven.roomNo : slot.venueRoomNo,
+            venueType: ven ? ven.type : slot.venueType
+          };
+        }
+        return slot;
+      });
+      return { ...prev, [activeWeekKey]: updatedSlots };
+    });
     showToast('Timetable period slot updated manually.');
   };
 
@@ -232,6 +294,15 @@ export function SchoolProvider({ children }) {
         toast,
         showToast,
         handleAutoGenerateTimetable,
+        // Week navigation
+        activeWeekKey,
+        setActiveWeekKey,
+        weeklyTimetables,
+        generatedWeekKeys,
+        deleteWeekTimetable,
+        getMondayOfWeek,
+        toWeekKey,
+        // CRUD
         addFaculty,
         updateFaculty,
         deleteFaculty,
