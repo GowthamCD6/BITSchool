@@ -22,8 +22,8 @@ export default function Login() {
 
 
 
-  const [email, setEmail] = useState('admin@bitschool.edu');
-  const [password, setPassword] = useState('admin123');
+  const [regNo, setRegNo] = useState('ADM001');
+  const [password, setPassword] = useState('1234');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,8 +34,8 @@ export default function Login() {
     e.preventDefault();
     setErrorMessage('');
 
-    if (!email || !password) {
-      setErrorMessage('Please enter both email address and password.');
+    if (!regNo || !password) {
+      setErrorMessage('Please enter both registration number and password.');
       return;
     }
 
@@ -45,7 +45,7 @@ export default function Login() {
       const response = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ regNo, password })
       });
       const data = await response.json();
 
@@ -221,7 +221,7 @@ export default function Login() {
 
           {/* Divider */}
           <div className="login-divider">
-            <span>OR SIGN IN WITH EMAIL</span>
+            <span>OR SIGN IN WITH REGISTRATION NUMBER</span>
           </div>
 
           {/* Error Alert */}
@@ -233,17 +233,17 @@ export default function Login() {
 
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="login-form">
-            {/* Email Field */}
+            {/* Registration Number Field */}
             <div className="form-group">
-              <label className="login-field-label">Institutional Email</label>
+              <label className="login-field-label">Registration Number</label>
               <div className="login-input-wrapper">
-                <Mail size={18} className="login-input-icon" />
+                <UserCheck size={18} className="login-input-icon" />
                 <input
-                  type="email"
+                  type="text"
                   className="form-control login-input"
-                  placeholder="admin@bitschool.edu"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="ADM001"
+                  value={regNo}
+                  onChange={(e) => setRegNo(e.target.value)}
                   required
                 />
               </div>

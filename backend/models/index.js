@@ -14,6 +14,7 @@ export const User = sequelize.define('User', {
   id: { type: DataTypes.STRING, primaryKey: true, defaultValue: 'admin-001' },
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, allowNull: false, unique: true },
+  regNo: { type: DataTypes.STRING, allowNull: false, unique: true },
   password: { type: DataTypes.STRING, allowNull: false },
   role: { type: DataTypes.STRING, defaultValue: 'Principal Administrator' },
   workspace: { type: DataTypes.STRING, defaultValue: 'Executive Administration' },
@@ -84,20 +85,21 @@ export async function syncDatabase() {
     console.log('[MySQL Models] Synced database schema tables successfully.');
 
     // Seed Principal Admin User if empty or missing password
-    const adminUser = await User.findOne({ where: { email: 'admin@bitschool.edu' } });
+    const adminUser = await User.findOne({ where: { email: 'admin@gmail.com' } });
     if (!adminUser) {
       const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash('admin123', salt);
+      const hashedPassword = await bcrypt.hash('1234', salt);
       await User.create({
         id: 'admin-001',
         name: 'Dr. Robert Vance',
-        email: 'admin@bitschool.edu',
+        email: 'admin@gmail.com',
+        regNo: 'ADM001',
         password: hashedPassword,
-        role: 'Principal Administrator',
-        workspace: 'Executive Administration',
+        role: 'Administrator',
+        workspace: 'Principal Administrator Workspace',
         avatarColor: '#2563eb'
       });
-      console.log('[MySQL Seed] Created Principal Administrator (admin@bitschool.edu)');
+      console.log('[MySQL Seed] Created Principal Administrator (admin@gmail.com, ADM001)');
     }
 
 

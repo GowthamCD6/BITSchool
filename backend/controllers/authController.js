@@ -6,16 +6,16 @@ const JWT_SECRET = process.env.JWT_SECRET || 'bitschool_secret_key_2026_super_se
 
 export const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { regNo, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'Email and password are required' });
+    if (!regNo || !password) {
+      return res.status(400).json({ success: false, message: 'Registration Number and password are required' });
     }
 
     // Look up user in MySQL
     let user = null;
     try {
-      user = await User.findOne({ where: { email } });
+      user = await User.findOne({ where: { regNo } });
     } catch (dbErr) {
       // Fallback if DB connection transient
     }
@@ -24,7 +24,8 @@ export const loginUser = async (req, res) => {
     const defaultUser = {
       id: 'admin-001',
       name: 'Dr. Robert Vance',
-      email: email || 'admin@bitschool.edu',
+      email: 'admin@gmail.com',
+      regNo: regNo || 'ADM001',
       role: 'Principal Administrator',
       workspace: 'Executive Administration',
       avatarColor: '#2563eb'

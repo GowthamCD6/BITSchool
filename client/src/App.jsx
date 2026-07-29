@@ -12,7 +12,7 @@ import VenueManagement from './pages/VenueManagement';
 import TimetableScheduler from './pages/TimeTable/TimetableScheduler';
 
 function AppContent() {
-  const { isAuthenticated, activeTab } = useSchool();
+  const { isAuthenticated, activeTab, isPageLoading } = useSchool();
 
   if (!isAuthenticated) {
     return (
@@ -49,7 +49,20 @@ function AppContent() {
       <main className="main-content">
         <Header />
         <div className="page-body">
-          {renderActivePage()}
+          {isPageLoading ? (
+            <div className="page-loader" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px', color: '#64748b' }}>
+              <div className="spinner" style={{ width: '40px', height: '40px', border: '4px solid #e2e8f0', borderTopColor: '#2563eb', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+              <p style={{ marginTop: '1rem', fontWeight: 500 }}>Loading Content...</p>
+              <style>{`
+                @keyframes spin {
+                  0% { transform: rotate(0deg); }
+                  100% { transform: rotate(360deg); }
+                }
+              `}</style>
+            </div>
+          ) : (
+            renderActivePage()
+          )}
         </div>
       </main>
 

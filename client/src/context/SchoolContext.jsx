@@ -45,7 +45,7 @@ export function SchoolProvider({ children }) {
     const saved = localStorage.getItem('bitschool_user');
     return saved ? JSON.parse(saved) : {
       name: 'Dr. Robert Vance',
-      email: 'admin@bitschool.edu',
+      email: 'admin@gmail.com',
       role: 'Administrator',
       avatarColor: '#2563eb'
     };
@@ -118,6 +118,7 @@ export function SchoolProvider({ children }) {
   });
 
   const [toast, setToast] = useState(null);
+  const [isPageLoading, setIsPageLoading] = useState(false);
 
   // Save to localStorage
   useEffect(() => {
@@ -373,6 +374,15 @@ export function SchoolProvider({ children }) {
     showToast('Timetable period slot updated manually.');
   };
 
+  const handleSetTab = (tabId) => {
+    if (tabId === activeTab) return;
+    setIsPageLoading(true);
+    setActiveTab(tabId);
+    setTimeout(() => {
+      setIsPageLoading(false);
+    }, 400); // 400ms simulate page loading
+  };
+
   return (
     <SchoolContext.Provider
       value={{
@@ -382,7 +392,8 @@ export function SchoolProvider({ children }) {
         login,
         logout,
         activeTab,
-        setActiveTab,
+        setActiveTab: handleSetTab,
+        isPageLoading,
         faculties,
         venues,
         classes,
