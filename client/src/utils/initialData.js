@@ -198,3 +198,97 @@ export const INITIAL_FACULTIES = [
     avatarColor: '#db2777'
   }
 ];
+
+export const INITIAL_ECA_VERTICALS = [
+  'Keyboard',
+  'Classical Dance / Table tennis',
+  'Violin / Movie session / Handwriting practice',
+  'Table tennis',
+  'Western Dance',
+  'Chess',
+  'Physical Fitness',
+  'English song',
+  'Ted ex video'
+];
+
+export const INITIAL_ECA_SCHEDULE = {
+  MONDAY: {
+    'Keyboard': { active: false, label: 'No' },
+    'Classical Dance / Table tennis': { active: false, label: 'No' },
+    'Violin / Movie session / Handwriting practice': { active: true, label: 'Yes (45 mins)', duration: '45 mins', color: '#db2777' },
+    'Table tennis': { active: false, label: 'No' },
+    'Western Dance': { active: false, label: 'No' },
+    'Chess': { active: false, label: 'No' },
+    'Physical Fitness': { active: true, label: 'Yes (15 mins)', duration: '15 mins', color: '#059669' },
+    'English song': { active: true, label: 'Yes (5 mins)', duration: '5 mins', color: '#2563eb' },
+    'Ted ex video': { active: false, label: 'No' }
+  },
+  TUESDAY: {
+    'Keyboard': { active: false, label: 'No' },
+    'Classical Dance / Table tennis': { active: true, label: 'Yes - Girls (1 hour)', duration: '1 hour', target: 'Girls', color: '#7c3aed' },
+    'Violin / Movie session / Handwriting practice': { active: false, label: 'No' },
+    'Table tennis': { active: true, label: 'Yes - Boys (1 hour)', duration: '1 hour', target: 'Boys', color: '#0891b2' },
+    'Western Dance': { active: false, label: 'No' },
+    'Chess': { active: false, label: 'No' },
+    'Physical Fitness': { active: true, label: 'Yes (15 mins)', duration: '15 mins', color: '#059669' },
+    'English song': { active: true, label: 'Yes (5 mins)', duration: '5 mins', color: '#2563eb' },
+    'Ted ex video': { active: false, label: 'No' }
+  },
+  WEDNESDAY: {
+    'Keyboard': { active: false, label: 'No' },
+    'Classical Dance / Table tennis': { active: false, label: 'No' },
+    'Violin / Movie session / Handwriting practice': { active: false, label: 'No' },
+    'Table tennis': { active: false, label: 'No' },
+    'Western Dance': { active: true, label: 'Yes (45 mins)', duration: '45 mins', color: '#d97706' },
+    'Chess': { active: false, label: 'No' },
+    'Physical Fitness': { active: true, label: 'Yes (15 mins)', duration: '15 mins', color: '#059669' },
+    'English song': { active: true, label: 'Yes (5 mins)', duration: '5 mins', color: '#2563eb' },
+    'Ted ex video': { active: false, label: 'No' }
+  },
+  THURSDAY: {
+    'Keyboard': { active: false, label: 'No' },
+    'Classical Dance / Table tennis': { active: false, label: 'No' },
+    'Violin / Movie session / Handwriting practice': { active: false, label: 'No' },
+    'Table tennis': { active: false, label: 'No' },
+    'Western Dance': { active: false, label: 'No' },
+    'Chess': { active: false, label: 'No' },
+    'Physical Fitness': { active: true, label: 'Yes (15 mins)', duration: '15 mins', color: '#059669' },
+    'English song': { active: true, label: 'Yes (5 mins)', duration: '5 mins', color: '#2563eb' },
+    'Ted ex video': { active: true, label: 'Yes (10 mins)', duration: '10 mins', color: '#e11d48' }
+  },
+  FRIDAY: {
+    'Keyboard': { active: true, label: 'Yes (1 hour)', duration: '1 hour', color: '#4f46e5' },
+    'Classical Dance / Table tennis': { active: false, label: 'No' },
+    'Violin / Movie session / Handwriting practice': { active: false, label: 'No' },
+    'Table tennis': { active: false, label: 'No' },
+    'Western Dance': { active: false, label: 'No' },
+    'Chess': { active: false, label: 'No' },
+    'Physical Fitness': { active: true, label: 'Yes (15 mins)', duration: '15 mins', color: '#059669' },
+    'English song': { active: true, label: 'Yes (5 mins)', duration: '5 mins', color: '#2563eb' },
+    'Ted ex video': { active: false, label: 'No' }
+  },
+  SATURDAY: {
+    'Keyboard': { active: false, label: 'No' },
+    'Classical Dance / Table tennis': { active: false, label: 'No' },
+    'Violin / Movie session / Handwriting practice': { active: false, label: 'No' },
+    'Table tennis': { active: false, label: 'No' },
+    'Western Dance': { active: false, label: 'No' },
+    'Chess': { active: true, label: 'Yes (30 mins)', duration: '30 mins', color: '#0284c7' },
+    'Physical Fitness': { active: true, label: 'Yes (15 mins)', duration: '15 mins', color: '#059669' },
+    'English song': { active: true, label: 'Yes (5 mins)', duration: '5 mins', color: '#2563eb' },
+    'Ted ex video': { active: false, label: 'No' }
+  }
+};
+
+export const INITIAL_ECA_TOTALS = {
+  'Keyboard': '1 hour',
+  'Classical Dance / Table tennis': '1 hour',
+  'Violin / Movie session / Handwriting practice': '45 mins',
+  'Table tennis': '1 hour',
+  'Western Dance': '45 mins',
+  'Chess': '30 mins',
+  'Physical Fitness': '1 hour 30 mins',
+  'English song': '30 mins',
+  'Ted ex video': '10 mins'
+};
+

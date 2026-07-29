@@ -53,23 +53,45 @@ function getWeekDates(mondayStr) {
   return dates;
 }
 
+function getMondayOfWeek(date) {
+  const d = new Date(date);
+  const dayOfWeek = d.getDay();
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function toWeekKey(date) {
+  const d = new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export default function TimetableScheduler() {
+  const schoolContext = useSchool();
   const {
-    timetable,
-    classes,
-    faculties,
-    venues,
-    days,
-    periods,
+    timetable = [],
+    classes = [],
+    faculties = [],
+    venues = [],
+    days = [],
+    periods = [],
     handleAutoGenerateTimetable,
     activeWeekKey,
     setActiveWeekKey,
-    weeklyTimetables,
-    generatedWeekKeys,
+    weeklyTimetables = {},
+    generatedWeekKeys = [],
     deleteWeekTimetable,
-    getMondayOfWeek,
-    toWeekKey
-  } = useSchool();
+    getMondayOfWeek: contextGetMonday = getMondayOfWeek,
+    toWeekKey: contextToWeekKey = toWeekKey
+  } = schoolContext || {};
+
+  const safeGetMonday = contextGetMonday || getMondayOfWeek;
+  const safeToWeekKey = contextToWeekKey || toWeekKey;
+
 
   // ═══════════════════════════════════════════════════════════════
   // STEP 1: Selection Screen State
@@ -78,38 +100,16 @@ export default function TimetableScheduler() {
 
   // Selection values
   const todayWeekKey = toWeekKey(getMondayOfWeek(new Date()));
-  const [selGrade, setSelGrade] = useState('');
-  const [selSection, setSelSection] = useState('');
+  const [selClassId, setSelClassId] = useState(classes[0]?.id || 'c1');
   const [selWeekDate, setSelWeekDate] = useState(activeWeekKey || todayWeekKey);
 
-  // Derived unique grades from classes
-  const uniqueGrades = useMemo(() => {
-    const grades = [...new Set(classes.map(c => c.grade))];
-    return grades.sort((a, b) => Number(a) - Number(b));
-  }, [classes]);
-
-  // Sections for the selected grade
-  const sectionsForGrade = useMemo(() => {
-    if (!selGrade) return [];
-    return classes.filter(c => c.grade === selGrade);
-  }, [classes, selGrade]);
-
-  // Selected class object
   const selectedClassObj = useMemo(() => {
-    if (!selGrade || !selSection) return null;
-    return classes.find(c => c.grade === selGrade && c.section === selSection) || null;
-  }, [classes, selGrade, selSection]);
-
-  // When grade changes, reset section
-  const handleGradeChange = (grade) => {
-    setSelGrade(grade);
-    setSelSection('');
-  };
+    return classes.find(c => c.id === selClassId) || classes[0];
+  }, [classes, selClassId]);
 
   // Enter timetable view
   const handleProceed = () => {
     if (!selectedClassObj) return;
-    // Set the week
     const monday = getMondayOfWeek(new Date(selWeekDate + 'T00:00:00'));
     setActiveWeekKey(toWeekKey(monday));
     setSelectedClassId(selectedClassObj.id);
@@ -120,6 +120,7 @@ export default function TimetableScheduler() {
   const handleBackToSelection = () => {
     setStep('select');
   };
+
 
   // ═══════════════════════════════════════════════════════════════
   // STEP 2: Timetable View State
@@ -245,59 +246,33 @@ export default function TimetableScheduler() {
 
         {/* Selection Cards */}
         <div className="tt-select-cards">
-          {/* Grade Selection */}
+          {/* Class Section Selection */}
           <div className="tt-select-card">
             <div className="tt-select-card-label">
-              <GraduationCap size={18} />
-              <span>Select Grade</span>
+              <Layers size={18} />
+              <span>Select Class Section</span>
             </div>
             <div className="tt-select-pill-group">
-              {uniqueGrades.length > 0 ? uniqueGrades.map(g => (
+              {classes.length > 0 ? classes.map(c => (
                 <button
-                  key={g}
-                  className={`tt-select-pill ${selGrade === g ? 'active' : ''}`}
-                  onClick={() => handleGradeChange(g)}
+                  key={c.id}
+                  className={`tt-select-pill ${selClassId === c.id ? 'active' : ''}`}
+                  onClick={() => setSelClassId(c.id)}
                 >
-                  Grade {g}
+                  {c.name}
+                  <span style={{ fontSize: '0.7rem', color: selClassId === c.id ? '#dbeafe' : '#94a3b8', marginLeft: '4px' }}>
+                    ({c.studentCount} students)
+                  </span>
                 </button>
               )) : (
-                <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>No grades configured yet.</span>
+                <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>No class sections configured yet.</span>
               )}
             </div>
           </div>
 
-          {/* Section Selection */}
-          <div className="tt-select-card">
-            <div className="tt-select-card-label">
-              <Layers size={18} />
-              <span>Select Section</span>
-            </div>
-            {selGrade ? (
-              <div className="tt-select-pill-group">
-                {sectionsForGrade.length > 0 ? sectionsForGrade.map(c => (
-                  <button
-                    key={c.id}
-                    className={`tt-select-pill ${selSection === c.section ? 'active' : ''}`}
-                    onClick={() => setSelSection(c.section)}
-                  >
-                    Section {c.section}
-                    <span style={{ fontSize: '0.7rem', color: selSection === c.section ? '#dbeafe' : '#94a3b8', marginLeft: '4px' }}>
-                      ({c.studentCount} students)
-                    </span>
-                  </button>
-                )) : (
-                  <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>No sections for Grade {selGrade}.</span>
-                )}
-              </div>
-            ) : (
-              <span style={{ fontSize: '0.82rem', color: '#94a3b8', padding: '0.25rem 0' }}>
-                Please select a grade first.
-              </span>
-            )}
-          </div>
-
           {/* Week Date Selection */}
           <div className="tt-select-card">
+
             <div className="tt-select-card-label">
               <Calendar size={18} />
               <span>Select Week</span>
@@ -359,12 +334,8 @@ export default function TimetableScheduler() {
             View Timetable
             <ArrowRight size={18} />
           </button>
-          {!selectedClassObj && selGrade && selSection && (
-            <span style={{ fontSize: '0.78rem', color: '#ef4444', marginTop: '0.4rem' }}>
-              No class found for Grade {selGrade} Section {selSection}.
-            </span>
-          )}
         </div>
+
       </div>
     );
   }

@@ -13,7 +13,14 @@ import {
   Tv,
   Monitor,
   FlaskConical,
-  BookMarked
+  BookMarked,
+  Activity,
+  Music,
+  Dumbbell,
+  Trophy,
+  Video,
+  Sparkles,
+  Clock
 } from 'lucide-react';
 import Modal from '../../components/Modal';
 
@@ -29,16 +36,36 @@ export default function PrimaryDataEntry() {
     addSubject,
     updateSubject,
     deleteSubject,
-    showToast
+    showToast,
+    // ECA Context State
+    ecaVerticals,
+    ecaSchedule,
+    updateEcaCell,
+    addEcaVertical,
+    deleteEcaVertical
   } = useSchool();
 
-  const [activeTab, setActiveTab] = useState('grades'); // 'grades' | 'courses'
-  const [selectedCourseGrade, setSelectedCourseGrade] = useState('all'); // 'all' | '8' | '9' | '10' | '11' etc.
+  const [activeTab, setActiveTab] = useState('grades'); // 'grades' | 'courses' | 'eca'
+  const [selectedClassGrade, setSelectedClassGrade] = useState('all');
+  const [selectedCourseGrade, setSelectedCourseGrade] = useState('all');
+  const [selectedEcaGrade, setSelectedEcaGrade] = useState('all');
 
   // Extract unique Grade levels dynamically
   const uniqueGrades = Array.from(new Set(classes.map((c) => String(c.grade)))).sort(
     (a, b) => Number(a) - Number(b)
   );
+
+  // Derived filtered classes
+  const filteredClasses = selectedClassGrade === 'all'
+    ? classes
+    : classes.filter((c) => String(c.grade) === String(selectedClassGrade));
+
+  // Derived filtered subjects
+  const filteredSubjects = selectedCourseGrade === 'all'
+    ? subjects
+    : subjects.filter((s) => !s.grade || String(s.grade) === String(selectedCourseGrade) || (Array.isArray(s.grades) && s.grades.includes(String(selectedCourseGrade))));
+
+
 
   // New Grade Modal State
   const [isAddGradeModalOpen, setIsAddGradeModalOpen] = useState(false);
@@ -65,8 +92,22 @@ export default function PrimaryDataEntry() {
     color: '#2563eb'
   });
 
-  // ── Grade Level Handlers ──
-  const handleAddGradeSubmit = (e) => {
+  // ── ECA Modal States ──
+  const [isEcaModalOpen, setIsEcaModalOpen] = useState(false);
+  const [editingEcaTarget, setEditingEcaTarget] = useState({ day: '', vertical: '' });
+  const [ecaForm, setEcaForm] = useState({
+    active: false,
+    label: 'No',
+    duration: '30 mins',
+    target: 'All',
+    color: '#059669'
+  });
+
+  const [isAddVerticalModalOpen, setIsAddVerticalModalOpen] = useState(false);
+  const [newVerticalName, setNewVerticalName] = useState('');
+
+  // ── Grade Handlers ──
+  const handleCreateGrade = (e) => {
     e.preventDefault();
     if (!newGradeLevel) return;
 
@@ -75,7 +116,6 @@ export default function PrimaryDataEntry() {
       return;
     }
 
-    // Automatically create default section 'A' for new Grade
     const defaultClassName = `Grade ${newGradeLevel}-A`;
     addClass({
       name: defaultClassName,
@@ -176,11 +216,88 @@ export default function PrimaryDataEntry() {
     setIsCourseModalOpen(false);
   };
 
+  // ── ECA Cell Edit Handlers ──
+  const openEcaModal = (day, vertical) => {
+    const currentSlot = ecaSchedule[day]?.[vertical] || { active: false, label: 'No' };
+    setEditingEcaTarget({ day, vertical });
+    setEcaForm({
+      active: currentSlot.active || false,
+      label: currentSlot.label || (currentSlot.active ? 'Yes' : 'No'),
+      duration: currentSlot.duration || '30 mins',
+      target: currentSlot.target || 'All',
+      color: currentSlot.color || '#059669'
+    });
+    setIsEcaModalOpen(true);
+  };
+
+  const handleEcaSubmit = (e) => {
+    e.preventDefault();
+    const { day, vertical } = editingEcaTarget;
+    if (!day || !vertical) return;
+
+    let finalLabel = 'No';
+    if (ecaForm.active) {
+      if (ecaForm.target === 'Girls') {
+        finalLabel = `Yes - Girls (${ecaForm.duration})`;
+      } else if (ecaForm.target === 'Boys') {
+        finalLabel = `Yes - Boys (${ecaForm.duration})`;
+      } else {
+        finalLabel = `Yes (${ecaForm.duration})`;
+      }
+    }
+
+    const newCellData = {
+      active: ecaForm.active,
+      label: finalLabel,
+      duration: ecaForm.duration,
+      target: ecaForm.target,
+      color: ecaForm.color
+    };
+
+    updateEcaCell(day, vertical, newCellData);
+    setIsEcaModalOpen(false);
+  };
+
+  const handleAddVerticalSubmit = (e) => {
+    e.preventDefault();
+    if (!newVerticalName.trim()) return;
+    addEcaVertical(newVerticalName.trim());
+    setNewVerticalName('');
+    setIsAddVerticalModalOpen(false);
+  };
+
   const getVenueBadge = (typeId) => {
     if (typeId === 'projector') return <span className="badge badge-projector"><Tv size={12} /> Projector Room</span>;
     if (typeId === 'computer_lab') return <span className="badge badge-lab"><Monitor size={12} /> Computer Lab</span>;
     if (typeId === 'science_lab') return <span className="badge badge-science"><FlaskConical size={12} /> Science Lab</span>;
     return <span className="badge badge-normal"><BookOpen size={12} /> Normal Class</span>;
+  };
+
+  const daysList = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+
+  // Calculate totals for ECA verticals
+  const calculateEcaTotal = (vertical) => {
+    let totalMins = 0;
+    daysList.forEach(day => {
+      const slot = ecaSchedule[day]?.[vertical];
+      if (slot && slot.active) {
+        const dur = slot.duration || '';
+        if (dur.includes('hour')) {
+          const hrs = parseFloat(dur) || 1;
+          totalMins += hrs * 60;
+        } else if (dur.includes('min')) {
+          const mins = parseInt(dur) || 0;
+          totalMins += mins;
+        }
+      }
+    });
+
+    if (totalMins === 0) return '0 mins';
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
+    if (h > 0 && m > 0) return `${h} hour ${m} mins`;
+    if (h > 0) return `${h} hour${h > 1 ? 's' : ''}`;
+    return `${m} mins`;
   };
 
   return (
@@ -225,57 +342,120 @@ export default function PrimaryDataEntry() {
             <BookMarked size={26} />
           </div>
         </div>
+
+        <div className="glass-card stat-card">
+          <div>
+            <div className="stat-lbl">ECA & Non-Academics</div>
+            <div className="stat-val">{ecaVerticals.length} Verticals</div>
+            <div style={{ fontSize: '0.78rem', color: '#db2777', marginTop: '0.35rem', fontWeight: 600 }}>
+              Physical Fitness, Music & Sports
+            </div>
+          </div>
+          <div className="stat-icon" style={{ background: '#fce7f3', color: '#db2777' }}>
+            <Activity size={26} />
+          </div>
+        </div>
       </div>
 
       {/* ── Main Tab Switcher Bar ── */}
-      <div className="section-header">
-        <div
-          style={{
-            display: 'flex',
-            padding: '0.25rem',
-            borderRadius: 'var(--radius-md)',
-            background: '#f1f5f9',
-            border: '1px solid var(--border-color)'
-          }}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0.25rem',
+          borderRadius: 'var(--radius-md)',
+          background: '#f1f5f9',
+          border: '1px solid var(--border-color)',
+          gap: '0.25rem',
+          width: 'fit-content'
+        }}
+      >
+        <button
+          className={`btn ${activeTab === 'grades' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
+          onClick={() => setActiveTab('grades')}
         >
-          <button
-            className={`btn ${activeTab === 'grades' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '0.5rem 1.1rem', fontSize: '0.85rem', border: 'none' }}
-            onClick={() => setActiveTab('grades')}
-          >
-            <GraduationCap size={16} /> Grade & Section Setup ({uniqueGrades.length} Grades)
-          </button>
+          <BookOpen size={16} /> Classes & Sections ({classes.length})
+        </button>
 
-          <button
-            className={`btn ${activeTab === 'courses' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '0.5rem 1.1rem', fontSize: '0.85rem', border: 'none' }}
-            onClick={() => setActiveTab('courses')}
-          >
-            <BookMarked size={16} /> Master Course & Grade Mapping ({subjects.length} Courses)
-          </button>
-        </div>
+        <button
+          className={`btn ${activeTab === 'courses' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
+          onClick={() => setActiveTab('courses')}
+        >
+          <BookMarked size={16} /> Master Course Curriculum ({subjects.length} Courses)
+        </button>
 
-        {activeTab === 'grades' ? (
-          <button className="btn btn-primary" onClick={() => setIsAddGradeModalOpen(true)}>
-            <Plus size={16} /> Add Grade Level
-          </button>
-        ) : (
-          <button className="btn btn-primary" onClick={() => openCourseModal()}>
-            <Plus size={16} /> Add / Assign Course
-          </button>
-        )}
+        <button
+          className={`btn ${activeTab === 'eca' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
+          onClick={() => setActiveTab('eca')}
+        >
+          <Activity size={16} /> Non Academics & ECA Schedule ({ecaVerticals.length} Verticals)
+        </button>
       </div>
 
-      {/* ── WORKSPACE 1: GRADE & SECTION SETUP ── */}
+      {/* ── WORKSPACE 1: CLASSES & SECTIONS SETUP ── */}
       {activeTab === 'grades' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          {uniqueGrades.map((grd) => {
+          {/* Grade Filter Pill Selector & Action Button */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.75rem 1rem',
+              background: '#ffffff',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              flexWrap: 'wrap'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '0.5rem' }}>
+                Filter Classes by Grade:
+              </span>
+              <button
+                className={`btn ${selectedClassGrade === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                onClick={() => setSelectedClassGrade('all')}
+              >
+                All Grades ({classes.length} Sections)
+              </button>
+              {uniqueGrades.map((g) => {
+                const count = classes.filter((c) => String(c.grade) === String(g)).length;
+                return (
+                  <button
+                    key={g}
+                    className={`btn ${selectedClassGrade === g ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                    onClick={() => setSelectedClassGrade(g)}
+                  >
+                    Grade {g} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              className="btn btn-primary"
+              style={{ padding: '0.45rem 1rem', fontSize: '0.82rem', whiteSpace: 'nowrap' }}
+              onClick={() => openSectionModal(selectedClassGrade === 'all' ? '10' : selectedClassGrade)}
+            >
+              <Plus size={16} /> Add Class Section
+            </button>
+          </div>
+
+
+          {/* Grouped Grade Level Cards */}
+          {(selectedClassGrade === 'all' ? uniqueGrades : [selectedClassGrade]).map((grd) => {
             const gradeClasses = classes.filter((c) => String(c.grade) === String(grd));
             const totalStudentsInGrade = gradeClasses.reduce((sum, c) => sum + c.studentCount, 0);
 
             return (
               <div key={grd} className="glass-card" style={{ padding: '1.5rem' }}>
-                {/* Grade Header */}
+                {/* Grade Card Header */}
                 <div
                   style={{
                     display: 'flex',
@@ -294,78 +474,104 @@ export default function PrimaryDataEntry() {
                         background: '#2563eb',
                         color: '#ffffff',
                         fontWeight: 800,
-                        fontSize: '1.1rem',
+                        fontSize: '1.05rem',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '0.4rem'
                       }}
                     >
-                      <GraduationCap size={20} /> Grade {grd}
+                      Grade {grd}
                     </div>
-
                     <div>
                       <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                        {gradeClasses.length} Section{gradeClasses.length !== 1 ? 's' : ''} Configured
+                        Grade Level {grd} Academic Standard
                       </div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                        {totalStudentsInGrade} Total Enrolled Students
+                        {gradeClasses.length} Active Class Section{gradeClasses.length > 1 ? 's' : ''} · {totalStudentsInGrade} Total Enrolled Students
                       </div>
                     </div>
                   </div>
 
                   <button
                     className="btn btn-secondary"
-                    style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+                    style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem' }}
                     onClick={() => openSectionModal(grd)}
                   >
                     <Plus size={14} /> Add Section to Grade {grd}
                   </button>
                 </div>
 
-                {/* Section Cards Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.2rem' }}>
+                {/* Section Cards Grid for this Grade */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                    gap: '1.25rem'
+                  }}
+                >
                   {gradeClasses.map((cls) => {
-                    const homeVen = venues.find((v) => v.id === cls.homeVenueId);
+                    const venue = venues.find((v) => v.id === cls.homeVenueId);
+
                     return (
                       <div
                         key={cls.id}
                         style={{
-                          padding: '1.1rem',
+                          background: '#ffffff',
+                          border: '1.5px solid var(--border-color)',
                           borderRadius: 'var(--radius-md)',
-                          background: '#f8fafc',
-                          border: '1px solid var(--border-color)',
+                          padding: '1.25rem',
                           display: 'flex',
                           flexDirection: 'column',
-                          justifyContent: 'space-between',
-                          gap: '1rem'
+                          gap: '1rem',
+                          boxShadow: '0 2px 6px rgba(15, 23, 42, 0.03)',
+                          transition: 'all var(--transition-fast)'
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                          <div>
-                            <h4 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                              {cls.name}
-                            </h4>
-                            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                              Section Letter: <strong>{cls.section}</strong>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                            <span
+                              style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: '50%',
+                                background: '#eff6ff',
+                                color: '#2563eb',
+                                fontWeight: 800,
+                                fontSize: '1rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '1px solid #bfdbfe'
+                              }}
+                            >
+                              {cls.section}
+                            </span>
+                            <div>
+                              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                                {cls.name}
+                              </div>
+                              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                Academic Section {cls.section}
+                              </div>
                             </div>
                           </div>
 
                           <div style={{ display: 'flex', gap: '0.35rem' }}>
                             <button
-                              className="btn btn-secondary btn-icon-only"
-                              style={{ width: '30px', height: '30px' }}
-                              onClick={() => openSectionModal(grd, cls)}
+                              className="btn btn-secondary"
+                              style={{ padding: '0.4rem 0.6rem' }}
+                              onClick={() => openSectionModal(cls.grade, cls)}
                               title="Edit Section"
                             >
-                              <Edit2 size={13} />
+                              <Edit2 size={14} />
                             </button>
                             <button
-                              className="btn btn-danger btn-icon-only"
-                              style={{ width: '30px', height: '30px' }}
+                              className="btn btn-secondary"
+                              style={{ padding: '0.4rem 0.6rem', color: '#ef4444' }}
                               onClick={() => deleteClass(cls.id)}
                               title="Delete Section"
                             >
-                              <Trash2 size={13} />
+                              <Trash2 size={14} />
                             </button>
                           </div>
                         </div>
@@ -373,114 +579,175 @@ export default function PrimaryDataEntry() {
                         <div
                           style={{
                             display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            paddingTop: '0.75rem',
-                            borderTop: '1px solid var(--border-color)',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.85rem 1rem',
+                            borderRadius: 'var(--radius-sm)',
+                            background: '#f8fafc',
+                            border: '1px solid #e2e8f0',
                             fontSize: '0.82rem'
                           }}
                         >
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-sub)' }}>
-                            <Users size={14} color="#2563eb" /> <strong>{cls.studentCount}</strong> Students
-                          </span>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--accent-purple)', fontWeight: 700 }}>
-                            <Home size={14} /> Room: {homeVen ? homeVen.roomNo : 'Unassigned'}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <Users size={14} /> Student Capacity:
+                            </span>
+                            <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>
+                              {cls.studentCount} Students
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <Home size={14} /> Assigned Classroom:
+                            </span>
+                            <span style={{ fontWeight: 700, color: '#0284c7' }}>
+                              {venue ? `${venue.roomNo} (${venue.type === 'projector' ? 'Projector Room' : 'Standard Room'})` : 'Main Classroom'}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
+
               </div>
             );
           })}
         </div>
       )}
 
-      {/* ── WORKSPACE 2: MASTER COURSE & GRADE CURRICULUM MAPPING ── */}
+
+      {/* ── WORKSPACE 2: MASTER COURSE CURRICULUM ── */}
       {activeTab === 'courses' && (
-        <div className="glass-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Master Course Curriculum & Weekly Target Periods</h3>
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                Manage course offerings, target weekly period quotas (e.g. Maths 8 periods/week), and required classroom facilities.
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              {/* Grade Filter Pills */}
-              <div style={{ display: 'flex', gap: '0.3rem', background: '#f1f5f9', padding: '0.2rem', borderRadius: 'var(--radius-md)' }}>
-                <button
-                  className={`btn ${selectedCourseGrade === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem', border: 'none' }}
-                  onClick={() => setSelectedCourseGrade('all')}
-                >
-                  All Grades
-                </button>
-                {uniqueGrades.map((g) => (
-                  <button
-                    key={g}
-                    className={`btn ${selectedCourseGrade === String(g) ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem', border: 'none' }}
-                    onClick={() => setSelectedCourseGrade(String(g))}
-                  >
-                    Grade {g}
-                  </button>
-                ))}
-              </div>
-
-              <button className="btn btn-primary" onClick={() => openCourseModal()}>
-                <Plus size={16} /> Add / Assign Course
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Grade Filter Pill Selector & Action Button */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.75rem 1rem',
+              background: '#ffffff',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              flexWrap: 'wrap'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '0.5rem' }}>
+                Filter by Target Grade:
+              </span>
+              <button
+                className={`btn ${selectedCourseGrade === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                onClick={() => setSelectedCourseGrade('all')}
+              >
+                All Grades ({subjects.length})
               </button>
+              {uniqueGrades.map((g) => (
+                <button
+                  key={g}
+                  className={`btn ${selectedCourseGrade === g ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                  onClick={() => setSelectedCourseGrade(g)}
+                >
+                  Grade {g}
+                </button>
+              ))}
             </div>
+
+            <button
+              className="btn btn-primary"
+              style={{ padding: '0.45rem 1rem', fontSize: '0.82rem', whiteSpace: 'nowrap' }}
+              onClick={() => openCourseModal()}
+            >
+              <Plus size={16} /> Add Course
+            </button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+          {/* Master Course Table */}
+          <div className="glass-card" style={{ padding: '1.25rem', overflowX: 'auto' }}>
+            <table className="table-custom">
               <thead>
-                <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                  <th style={{ padding: '0.85rem 1rem' }}>Course Code</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Course / Subject Name</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Weekly Target Periods</th>
-                  <th style={{ padding: '0.85rem 1rem' }}>Required Venue Facility</th>
-                  <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>Actions</th>
+                <tr>
+                  <th>Course Code</th>
+                  <th>Subject / Course Name</th>
+                  <th>Weekly Target Quota</th>
+                  <th>Required Facility Room</th>
+                  <th>Color Tag</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {subjects.map((subj) => (
-                  <tr key={subj.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                {filteredSubjects.map((subj) => (
+                  <tr key={subj.id}>
+                    <td>
                       <span
                         style={{
                           display: 'inline-block',
-                          width: '10px',
-                          height: '10px',
-                          borderRadius: '50%',
-                          background: subj.color || '#2563eb',
-                          marginRight: '0.5rem'
+                          padding: '0.25rem 0.6rem',
+                          borderRadius: '6px',
+                          background: '#eff6ff',
+                          color: '#2563eb',
+                          fontWeight: 800,
+                          fontSize: '0.82rem',
+                          fontFamily: 'monospace'
                         }}
-                      ></span>
-                      {subj.code}
+                      >
+                        {subj.code}
+                      </span>
                     </td>
-                    <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: subj.color || '#2563eb' }}>
-                      {subj.name}
+                    <td>
+                      <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{subj.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        Standard Academic Curriculum
+                      </div>
                     </td>
-                    <td style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>
-                      <span className="badge badge-normal" style={{ fontSize: '0.82rem', fontWeight: 700 }}>
+                    <td>
+                      <span
+                        style={{
+                          fontWeight: 800,
+                          color: subj.weeklyPeriods >= 8 ? '#4f46e5' : '#0f172a',
+                          fontSize: '0.9rem'
+                        }}
+                      >
                         {subj.weeklyPeriods} Periods / Week
                       </span>
                     </td>
-                    <td style={{ padding: '0.85rem 1rem' }}>
-                      {getVenueBadge(subj.requiredVenueType)}
+                    <td>{getVenueBadge(subj.requiredVenueType)}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span
+                          style={{
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: subj.color || '#2563eb',
+                            display: 'inline-block',
+                            border: '1px solid #cbd5e1'
+                          }}
+                        />
+                        <span style={{ fontSize: '0.78rem', fontFamily: 'monospace', color: '#64748b' }}>
+                          {subj.color || '#2563eb'}
+                        </span>
+                      </div>
                     </td>
-                    <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.4rem' }}>
-                        <button className="btn btn-secondary btn-icon-only" onClick={() => openCourseModal(subj)} title="Edit Target Quota">
-                          <Edit2 size={14} />
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem' }}
+                          onClick={() => openCourseModal(subj)}
+                        >
+                          <Edit2 size={13} /> Edit
                         </button>
-                        <button className="btn btn-danger btn-icon-only" onClick={() => deleteSubject(subj.id)} title="Delete Course">
-                          <Trash2 size={14} />
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: '#ef4444' }}
+                          onClick={() => deleteSubject(subj.id)}
+                        >
+                          <Trash2 size={13} /> Delete
                         </button>
                       </div>
                     </td>
@@ -492,60 +759,196 @@ export default function PrimaryDataEntry() {
         </div>
       )}
 
-      {/* ── MODAL: ADD NEW GRADE LEVEL ── */}
+      {/* ── WORKSPACE 3: NON ACADEMICS & ECA SCHEDULE ── */}
+      {activeTab === 'eca' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* ECA Grade Filter Pill Selector & Action Button */}
+          <div
+
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.75rem 1rem',
+              background: '#ffffff',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              flexWrap: 'wrap'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '0.5rem' }}>
+                Filter ECA Schedule by Grade:
+              </span>
+              <button
+                className={`btn ${selectedEcaGrade === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                onClick={() => setSelectedEcaGrade('all')}
+              >
+                All Grades
+              </button>
+              {uniqueGrades.map((g) => (
+                <button
+                  key={g}
+                  className={`btn ${selectedEcaGrade === g ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                  onClick={() => setSelectedEcaGrade(g)}
+                >
+                  Grade {g}
+                </button>
+              ))}
+            </div>
+
+            <button
+              className="btn btn-primary"
+              style={{ padding: '0.45rem 1rem', fontSize: '0.82rem', whiteSpace: 'nowrap' }}
+              onClick={() => setIsAddVerticalModalOpen(true)}
+            >
+              <Plus size={16} /> Add ECA Vertical
+            </button>
+          </div>
+
+
+
+          {/* ECA Matrix Table (Exact visual layout matching Non-Academics Excel sheet) */}
+          <div className="eca-table-container">
+            <table className="eca-matrix">
+              <thead>
+                <tr>
+                  <th className="vertical-day-col">
+                    VERTICALS /<br />DAYS
+                  </th>
+                  {ecaVerticals.map((vert) => (
+                    <th key={vert}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
+                        <span>{vert}</span>
+                        <button
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                            padding: '2px'
+                          }}
+                          onClick={() => deleteEcaVertical(vert)}
+                          title={`Delete vertical "${vert}"`}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {daysList.map((day) => (
+                  <tr key={day}>
+                    <td style={{ fontWeight: 800, color: '#0f172a', background: '#f8fafc', textTransform: 'uppercase', fontSize: '0.82rem' }}>
+                      {day}
+                    </td>
+                    {ecaVerticals.map((vert) => {
+                      const slot = ecaSchedule[day]?.[vert] || { active: false, label: 'No' };
+
+                      return (
+                        <td key={vert}>
+                          <button
+                            className="eca-cell-btn"
+                            onClick={() => openEcaModal(day, vert)}
+                            title={`Click to edit ${vert} on ${day}`}
+                          >
+                            {slot.active ? (
+                              <div
+                                className="eca-badge-yes"
+                                style={{
+                                  background: slot.color ? `${slot.color}15` : '#ecfdf5',
+                                  color: slot.color || '#059669',
+                                  border: `1px solid ${slot.color ? `${slot.color}40` : '#a7f3d0'}`
+                                }}
+                              >
+                                {slot.label}
+                              </div>
+                            ) : (
+                              <span className="eca-badge-no">No</span>
+                            )}
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+
+                {/* TOTAL with Saturday Row */}
+                <tr className="total-row">
+                  <td style={{ background: '#0f172a', color: '#ffffff', fontWeight: 800 }}>
+                    TOTAL with saturday
+                  </td>
+                  {ecaVerticals.map((vert) => (
+                    <td key={vert} style={{ background: '#f1f5f9', fontWeight: 800, color: '#0f172a' }}>
+                      {calculateEcaTotal(vert)}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: ADD GRADE LEVEL ── */}
       <Modal
         isOpen={isAddGradeModalOpen}
         onClose={() => setIsAddGradeModalOpen(false)}
-        title="Add New School Grade Level"
+        title="Add New Grade Level"
       >
-        <form onSubmit={handleAddGradeSubmit}>
+        <form onSubmit={handleCreateGrade}>
           <div className="form-group">
-            <label>Grade Level (e.g. 1, 2, 6, 8, 9, 10, 11, 12)</label>
+            <label>Grade Level (Number or Designation)</label>
             <input
               type="text"
               className="form-control"
-              placeholder="e.g. 12"
+              placeholder="e.g. 12, 11, 7"
               value={newGradeLevel}
               onChange={(e) => setNewGradeLevel(e.target.value)}
               required
             />
           </div>
 
-          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '1.5rem' }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+            Creating Grade <strong>{newGradeLevel}</strong> will automatically initialize Section A (Grade {newGradeLevel}-A) with default student capacity and classroom room assignment.
+          </div>
+
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setIsAddGradeModalOpen(false)}>
               Cancel
             </button>
             <button type="submit" className="btn btn-primary">
-              Configure Grade {newGradeLevel}
+              Create Grade Level
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* ── MODAL: ADD / EDIT SECTION IN GRADE ── */}
+      {/* ── MODAL: ADD / EDIT SECTION ── */}
       <Modal
         isOpen={isSectionModalOpen}
         onClose={() => setIsSectionModalOpen(false)}
-        title={editingSection ? `Edit Section: ${editingSection.name}` : `Add Section to Grade ${sectionForm.grade}`}
+        title={editingSection ? `Edit Section ${editingSection.name}` : `Add Section to Grade ${sectionForm.grade}`}
       >
         <form onSubmit={handleSectionSubmit}>
           <div className="form-group">
             <label>Grade Level</label>
-            <input
-              type="text"
-              className="form-control"
-              value={sectionForm.grade}
-              onChange={(e) => setSectionForm({ ...sectionForm, grade: e.target.value })}
-              required
-            />
+            <input type="text" className="form-control" value={sectionForm.grade} disabled readOnly />
           </div>
 
           <div className="form-group">
-            <label>Section Letter / Identifier (e.g. A, B, C)</label>
+            <label>Section Designation Letter</label>
             <input
               type="text"
               className="form-control"
-              placeholder="e.g. A, B, C"
+              placeholder="e.g. A, B, C, D"
+              maxLength="3"
               value={sectionForm.section}
               onChange={(e) => setSectionForm({ ...sectionForm, section: e.target.value })}
               required
@@ -667,6 +1070,110 @@ export default function PrimaryDataEntry() {
             </button>
             <button type="submit" className="btn btn-primary">
               {editingSubject ? 'Update Course' : 'Save Course'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ── MODAL: EDIT ECA CELL SLOT ── */}
+      <Modal
+        isOpen={isEcaModalOpen}
+        onClose={() => setIsEcaModalOpen(false)}
+        title={`Edit Activity: ${editingEcaTarget.vertical} on ${editingEcaTarget.day}`}
+      >
+        <form onSubmit={handleEcaSubmit}>
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={ecaForm.active}
+                onChange={(e) => setEcaForm({ ...ecaForm, active: e.target.checked })}
+              />
+              <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>Activity Scheduled on this Day?</span>
+            </label>
+          </div>
+
+          {ecaForm.active && (
+            <>
+              <div className="form-group">
+                <label>Session Duration</label>
+                <select
+                  className="form-control"
+                  value={ecaForm.duration}
+                  onChange={(e) => setEcaForm({ ...ecaForm, duration: e.target.value })}
+                >
+                  <option value="5 mins">5 mins</option>
+                  <option value="10 mins">10 mins</option>
+                  <option value="15 mins">15 mins</option>
+                  <option value="30 mins">30 mins</option>
+                  <option value="45 mins">45 mins</option>
+                  <option value="1 hour">1 hour</option>
+                  <option value="1 hour 30 mins">1 hour 30 mins</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Target Audience / Group</label>
+                <select
+                  className="form-control"
+                  value={ecaForm.target}
+                  onChange={(e) => setEcaForm({ ...ecaForm, target: e.target.value })}
+                >
+                  <option value="All">All Students</option>
+                  <option value="Girls">Girls Only</option>
+                  <option value="Boys">Boys Only</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Badge Highlight Color</label>
+                <input
+                  type="color"
+                  className="form-control"
+                  style={{ height: '42px', padding: '0.2rem 0.5rem', cursor: 'pointer' }}
+                  value={ecaForm.color}
+                  onChange={(e) => setEcaForm({ ...ecaForm, color: e.target.value })}
+                />
+              </div>
+            </>
+          )}
+
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '1.5rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setIsEcaModalOpen(false)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Save ECA Activity
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ── MODAL: ADD ECA VERTICAL ── */}
+      <Modal
+        isOpen={isAddVerticalModalOpen}
+        onClose={() => setIsAddVerticalModalOpen(false)}
+        title="Add New ECA Activity Vertical"
+      >
+        <form onSubmit={handleAddVerticalSubmit}>
+          <div className="form-group">
+            <label>Vertical / Activity Name</label>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="e.g. Karate, Swimming, Robotics, Yoga"
+              value={newVerticalName}
+              onChange={(e) => setNewVerticalName(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '1.5rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setIsAddVerticalModalOpen(false)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Add Vertical
             </button>
           </div>
         </form>

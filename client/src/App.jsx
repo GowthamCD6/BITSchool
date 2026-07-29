@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Toast from './components/Toast';
 
+import Login from './pages/Auth/Login';
 import Dashboard from './pages/Dashboard/Dashboard';
 import PrimaryDataEntry from './pages/PrimaryData/PrimaryDataEntry';
 import FacultyManagement from './pages/FacultyManagement';
@@ -11,7 +12,16 @@ import VenueManagement from './pages/VenueManagement';
 import TimetableScheduler from './pages/TimeTable/TimetableScheduler';
 
 function AppContent() {
-  const { activeTab } = useSchool();
+  const { isAuthenticated, activeTab } = useSchool();
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <Login />
+        <Toast />
+      </>
+    );
+  }
 
   const renderActivePage = () => {
     switch (activeTab) {

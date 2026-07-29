@@ -1,9 +1,9 @@
 import React from 'react';
 import { useSchool } from '../context/SchoolContext';
-import { Sparkles, Calendar, User as UserIcon } from 'lucide-react';
+import { Sparkles, Calendar, LogOut, User as UserIcon } from 'lucide-react';
 
 export default function Header() {
-  const { activeTab, handleAutoGenerateTimetable } = useSchool();
+  const { activeTab, handleAutoGenerateTimetable, currentUser, logout } = useSchool();
 
   const titles = {
     dashboard: 'Dashboard',
@@ -22,28 +22,24 @@ export default function Header() {
       </div>
 
       <div className="header-right">
-        <button
-          className="btn btn-emerald"
-          onClick={handleAutoGenerateTimetable}
-          title="Run 6-Day x 8-Period Auto Timetable Generator"
-        >
-          <Sparkles size={16} />
-          Auto Schedule Matrix
-        </button>
 
-        <div className="header-info-pill">
-          <Calendar size={14} className="calendar-icon" />
-          <span>6-Day Work Week</span>
-        </div>
-
-        <div className="user-info">
+        <div className="user-info" style={{ gap: '0.75rem' }}>
           <div className="user-text">
-            <div className="user-name">Principal Admin</div>
-            <div className="user-role">Administrator</div>
+            <div className="user-name">{currentUser?.name || 'Dr. Robert Vance'}</div>
+            <div className="user-role">{currentUser?.role || 'Administrator'}</div>
           </div>
-          <div className="user-avatar">
+          <div className="user-avatar" style={{ background: currentUser?.avatarColor || '#2563eb' }}>
             <UserIcon size={18} />
           </div>
+
+          <button
+            className="btn btn-secondary"
+            onClick={logout}
+            title="Sign Out of BITSchool"
+            style={{ padding: '0.4rem 0.65rem', marginLeft: '0.2rem', color: '#ef4444', border: '1px solid #fee2e2', background: '#fef2f2' }}
+          >
+            <LogOut size={15} />
+          </button>
         </div>
       </div>
     </header>

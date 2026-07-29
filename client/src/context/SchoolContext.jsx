@@ -6,7 +6,10 @@ import {
   INITIAL_CLASSES,
   INITIAL_SUBJECTS,
   INITIAL_VENUES,
-  INITIAL_FACULTIES
+  INITIAL_FACULTIES,
+  INITIAL_ECA_VERTICALS,
+  INITIAL_ECA_SCHEDULE,
+  INITIAL_ECA_TOTALS
 } from '../utils/initialData';
 import { generateAutoTimetable } from '../utils/timetableGenerator';
 
@@ -32,6 +35,22 @@ function toWeekKey(date) {
 }
 
 export function SchoolProvider({ children }) {
+  // ── Authentication State ──
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const saved = localStorage.getItem('bitschool_authenticated');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('bitschool_user');
+    return saved ? JSON.parse(saved) : {
+      name: 'Dr. Robert Vance',
+      email: 'admin@bitschool.edu',
+      role: 'Administrator',
+      avatarColor: '#2563eb'
+    };
+  });
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [faculties, setFaculties] = useState(() => {
     const saved = localStorage.getItem('bitschool_faculties');
@@ -51,6 +70,17 @@ export function SchoolProvider({ children }) {
   const [subjects, setSubjects] = useState(() => {
     const saved = localStorage.getItem('bitschool_subjects');
     return saved ? JSON.parse(saved) : INITIAL_SUBJECTS;
+  });
+
+  // ── ECA (Extra Curricular Activities / Non Academics) State ──
+  const [ecaVerticals, setEcaVerticals] = useState(() => {
+    const saved = localStorage.getItem('bitschool_eca_verticals');
+    return saved ? JSON.parse(saved) : INITIAL_ECA_VERTICALS;
+  });
+
+  const [ecaSchedule, setEcaSchedule] = useState(() => {
+    const saved = localStorage.getItem('bitschool_eca_schedule');
+    return saved ? JSON.parse(saved) : INITIAL_ECA_SCHEDULE;
   });
 
   // ── Active Week Key (Monday date string e.g. '2026-07-27') ──
@@ -111,8 +141,74 @@ export function SchoolProvider({ children }) {
   }, [weeklyTimetables]);
 
   useEffect(() => {
-    localStorage.setItem('bitschool_active_week', activeWeekKey);
-  }, [activeWeekKey]);
+    localStorage.setItem('bitschool_authenticated', JSON.stringify(isAuthenticated));
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    localStorage.setItem('bitschool_user', JSON.stringify(currentUser));
+  }, [currentUser]);
+
+  // ── Auth Handlers ──
+  const login = (userData) => {
+    setCurrentUser(userData);
+    setIsAuthenticated(true);
+    showToast(`Welcome back, ${userData.name}! Logged in as ${userData.role}.`);
+  };
+
+  const logout = () => {
+    setIsAuthenticated(false);
+    showToast('Signed out successfully.', 'warning');
+  };
+
+  useEffect(() => {
+    localStorage.setItem('bitschool_eca_verticals', JSON.stringify(ecaVerticals));
+  }, [ecaVerticals]);
+
+  useEffect(() => {
+    localStorage.setItem('bitschool_eca_schedule', JSON.stringify(ecaSchedule));
+  }, [ecaSchedule]);
+
+  // ── ECA Handlers ──
+  const updateEcaCell = (day, vertical, newCellData) => {
+    setEcaSchedule(prev => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        [vertical]: newCellData
+      }
+    }));
+    showToast(`Updated ECA activity for ${vertical} on ${day}.`);
+  };
+
+  const addEcaVertical = (verticalName) => {
+    if (ecaVerticals.includes(verticalName)) {
+      showToast(`Vertical "${verticalName}" already exists.`, 'warning');
+      return;
+    }
+    setEcaVerticals(prev => [...prev, verticalName]);
+    setEcaSchedule(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(d => {
+        next[d] = { ...next[d], [verticalName]: { active: false, label: 'No' } };
+      });
+      return next;
+    });
+    showToast(`Added new ECA Vertical: "${verticalName}".`);
+  };
+
+  const deleteEcaVertical = (verticalName) => {
+    setEcaVerticals(prev => prev.filter(v => v !== verticalName));
+    setEcaSchedule(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(d => {
+        const dayCopy = { ...next[d] };
+        delete dayCopy[verticalName];
+        next[d] = dayCopy;
+      });
+      return next;
+    });
+    showToast(`Removed ECA Vertical "${verticalName}".`, 'warning');
+  };
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type, id: Date.now() });
@@ -280,6 +376,11 @@ export function SchoolProvider({ children }) {
   return (
     <SchoolContext.Provider
       value={{
+        // Auth
+        isAuthenticated,
+        currentUser,
+        login,
+        logout,
         activeTab,
         setActiveTab,
         faculties,
@@ -302,6 +403,12 @@ export function SchoolProvider({ children }) {
         deleteWeekTimetable,
         getMondayOfWeek,
         toWeekKey,
+        // ECA (Non Academics)
+        ecaVerticals,
+        ecaSchedule,
+        updateEcaCell,
+        addEcaVertical,
+        deleteEcaVertical,
         // CRUD
         addFaculty,
         updateFaculty,
