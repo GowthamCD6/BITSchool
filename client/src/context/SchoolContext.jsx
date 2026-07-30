@@ -44,9 +44,9 @@ export function SchoolProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('bitschool_user');
     return saved ? JSON.parse(saved) : {
-      name: 'Dr. Robert Vance',
-      email: 'admin@gmail.com',
-      role: 'Administrator',
+      name: 'Gowtham',
+      email: 'gowthamnaveen124@gmail.com',
+      role: 'Principal Administrator',
       avatarColor: '#2563eb'
     };
   });

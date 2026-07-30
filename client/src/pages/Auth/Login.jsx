@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSchool } from '../../context/SchoolContext';
 import loginImg from '../../assets/login.webp';
 import heroImg from '../../assets/hero.png';
@@ -13,22 +13,100 @@ import {
   BookOpen,
   Calendar,
   ArrowRight,
-  UserCheck
+  UserCheck,
+  CheckCircle2,
+  HelpCircle,
+  X
 } from 'lucide-react';
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '187538648042-r5tambj8fffumhdd5hibcuhp5ss1q83f.apps.googleusercontent.com';
 
 export default function Login() {
   const { login } = useSchool();
 
-
-
-
-  const [regNo, setRegNo] = useState('ADM001');
-  const [password, setPassword] = useState('1234');
+  const [regNo, setRegNo] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const authenticateGoogleEmail = async (userEmail, userName) => {
+    setIsGoogleLoading(true);
+    setErrorMessage('');
+
+    if (!userEmail) {
+      setIsGoogleLoading(false);
+      setErrorMessage('Google account email could not be retrieved.');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail, name: userName })
+      });
+      const data = await response.json();
+
+      setIsGoogleLoading(false);
+
+      if (data.success) {
+        if (data.token) {
+          localStorage.setItem('bitschool_token', data.token);
+        }
+        login(data.user);
+      } else {
+        setErrorMessage(data.message || `Access Denied: ${userEmail} is not registered in the system.`);
+      }
+    } catch (error) {
+      setIsGoogleLoading(false);
+      setErrorMessage('Unable to connect to backend server. Please verify database connection.');
+    }
+  };
+
+  const handleGoogleCallbackResponse = async (googleResponse) => {
+    if (googleResponse && googleResponse.credential) {
+      try {
+        const payload = JSON.parse(atob(googleResponse.credential.split('.')[1]));
+        if (payload.email) {
+          await authenticateGoogleEmail(payload.email, payload.name);
+          return;
+        }
+      } catch (e) {
+        console.error('Failed to parse Google credential token:', e);
+      }
+    }
+    setIsGoogleLoading(false);
+    setErrorMessage('Google authentication token was invalid.');
+  };
+
+  useEffect(() => {
+    /* global google */
+    if (window.google && window.google.accounts) {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleGoogleCallbackResponse,
+          auto_select: false,
+          use_fedcm_for_prompt: false
+        });
+
+        const hiddenBtn = document.getElementById('hiddenGoogleBtn');
+        if (hiddenBtn) {
+          hiddenBtn.innerHTML = '';
+          window.google.accounts.id.renderButton(hiddenBtn, {
+            theme: 'outline',
+            size: 'large',
+            width: 380
+          });
+        }
+      } catch (err) {
+        console.warn('Google Identity Initialization Notice:', err);
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -61,49 +139,44 @@ export default function Login() {
       }
     } catch (error) {
       setIsLoading(false);
-      // Fallback offline login
-      login({
-        name: 'Dr. Robert Vance',
-        email,
-        role: 'Administrator',
-        avatarColor: '#2563eb'
-      });
+      setErrorMessage('Unable to reach server. Please check your backend database connection.');
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = () => {
     setErrorMessage('');
     setIsGoogleLoading(true);
 
-    try {
-      const response = await fetch('http://localhost:5000/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'robert.vance@bitschool.edu', name: 'Dr. Robert Vance' })
-      });
-      const data = await response.json();
+    /* global google */
+    if (window.google && window.google.accounts && window.google.accounts.id) {
+      const hiddenBtnDiv = document.getElementById('hiddenGoogleBtn');
+      const innerGoogleBtn = hiddenBtnDiv ? hiddenBtnDiv.querySelector('div[role="button"], iframe') : null;
 
-      setIsGoogleLoading(false);
-
-      if (data.success) {
-        if (data.token) {
-          localStorage.setItem('bitschool_token', data.token);
-        }
-        login(data.user);
+      if (innerGoogleBtn) {
+        innerGoogleBtn.click();
       } else {
-        setErrorMessage(data.message || 'Google authentication failed.');
+        window.google.accounts.id.prompt((notification) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            setIsGoogleLoading(false);
+          }
+        });
       }
-    } catch (error) {
+    } else {
       setIsGoogleLoading(false);
-      login({
-        name: 'Dr. Robert Vance',
-        email: 'robert.vance@bitschool.edu',
-        role: 'Administrator',
-        avatarColor: '#4285f4'
-      });
+      setErrorMessage('Google Identity Services SDK is loading. Please try again.');
     }
   };
 
+  const handleForgotSubmit = (e) => {
+    e.preventDefault();
+    if (!forgotEmail) return;
+    setForgotSuccess(true);
+    setTimeout(() => {
+      setForgotSuccess(false);
+      setShowForgotModal(false);
+      setForgotEmail('');
+    }, 2500);
+  };
 
   return (
     <div className="login-wrapper">
@@ -130,50 +203,11 @@ export default function Login() {
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'linear-gradient(to right, rgba(15, 23, 42, 0.35), rgba(15, 23, 42, 0.1))',
+            background: 'linear-gradient(to right, rgba(15, 23, 42, 0.45), rgba(15, 23, 42, 0.15))',
             pointerEvents: 'none'
           }}
         />
-        {/* Floating Brand Badge */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '2.25rem',
-            left: '2.25rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            background: 'rgba(15, 23, 42, 0.8)',
-            backdropFilter: 'blur(12px)',
-            padding: '0.65rem 1.25rem',
-            borderRadius: '12px',
-            border: '1px solid rgba(255, 255, 255, 0.18)',
-            color: '#ffffff',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
-          }}
-        >
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff'
-            }}
-          >
-            <GraduationCap size={20} />
-          </div>
-          <div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.3px', lineHeight: 1.1 }}>BITSchool</div>
-            <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.5px' }}>ACADEMIC ERP</div>
-          </div>
-        </div>
       </div>
-
-
 
       {/* ── RIGHT FORM CONTAINER ── */}
       <div className="login-form-panel">
@@ -183,7 +217,6 @@ export default function Login() {
           <div className="login-header">
             <h2 className="login-title">Sign In to BITSchool</h2>
           </div>
-
 
           {/* Google Sign-In Button */}
           <button
@@ -218,6 +251,7 @@ export default function Login() {
               </>
             )}
           </button>
+          <div id="hiddenGoogleBtn" style={{ display: 'none' }}></div>
 
           {/* Divider */}
           <div className="login-divider">
@@ -241,7 +275,7 @@ export default function Login() {
                 <input
                   type="text"
                   className="form-control login-input"
-                  placeholder="ADM001"
+                  placeholder="Enter your reg no"
                   value={regNo}
                   onChange={(e) => setRegNo(e.target.value)}
                   required
@@ -251,18 +285,13 @@ export default function Login() {
 
             {/* Password Field */}
             <div className="form-group">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label className="login-field-label">Password</label>
-                <a href="#forgot" onClick={(e) => e.preventDefault()} className="login-forgot-link">
-                  Forgot password?
-                </a>
-              </div>
+              <label className="login-field-label">Password</label>
               <div className="login-input-wrapper">
                 <Lock size={18} className="login-input-icon" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   className="form-control login-input"
-                  placeholder="Enter admin password"
+                  placeholder="Enter password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -296,7 +325,7 @@ export default function Login() {
               disabled={isLoading}
             >
               {isLoading ? (
-                <span>Authenticating Admin...</span>
+                <span>Authenticating User...</span>
               ) : (
                 <>
                   <span>Sign In to Dashboard</span>
