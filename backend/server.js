@@ -7,6 +7,8 @@ import { syncDatabase } from './models/index.js';
 import authRoutes from './routes/authRoutes.js';
 import classRoutes from './routes/classRoutes.js';
 import courseRoutes from './routes/courseRoutes.js';
+import venueRoutes from './routes/venueRoutes.js';
+import facultyRoutes from './routes/facultyRoutes.js';
 import ecaRoutes from './routes/ecaRoutes.js';
 import timetableRoutes from './routes/timetableRoutes.js';
 
@@ -45,6 +47,8 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/courses', courseRoutes);
+app.use('/api/venues', venueRoutes);
+app.use('/api/faculties', facultyRoutes);
 app.use('/api/eca', ecaRoutes);
 app.use('/api/timetables', timetableRoutes);
 

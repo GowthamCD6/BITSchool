@@ -23,6 +23,7 @@ import {
   Clock
 } from 'lucide-react';
 import Modal from '../../components/Modal';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function PrimaryDataEntry() {
   const {
@@ -45,20 +46,32 @@ export default function PrimaryDataEntry() {
     deleteEcaVertical
   } = useSchool();
 
+  // Deletion Confirmation State
+  const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'class' | 'subject' | 'eca', data: object | string }
+
   const [activeTab, setActiveTab] = useState('grades'); // 'grades' | 'courses' | 'eca'
   const [selectedClassGrade, setSelectedClassGrade] = useState('all');
   const [selectedCourseGrade, setSelectedCourseGrade] = useState('all');
   const [selectedEcaGrade, setSelectedEcaGrade] = useState('all');
 
-  // Extract unique Grade levels dynamically
-  const uniqueGrades = Array.from(new Set(classes.map((c) => String(c.grade)))).sort(
+  // Extract unique Grade levels dynamically from class models safely
+  const getGradeNum = (c) => {
+    if (!c) return '10';
+    if (typeof c.grade === 'object' && c.grade !== null) {
+      return String(c.grade.name || c.grade.id || '10').replace('Grade ', '');
+    }
+    if (c.gradeName) return String(c.gradeName).replace('Grade ', '');
+    return String(c.grade || '10').replace('Grade ', '');
+  };
+
+  const uniqueGrades = Array.from(new Set(classes.map(getGradeNum))).sort(
     (a, b) => Number(a) - Number(b)
   );
 
   // Derived filtered classes
   const filteredClasses = selectedClassGrade === 'all'
     ? classes
-    : classes.filter((c) => String(c.grade) === String(selectedClassGrade));
+    : classes.filter((c) => getGradeNum(c) === String(selectedClassGrade));
 
   // Derived filtered subjects
   const filteredSubjects = selectedCourseGrade === 'all'
@@ -302,6 +315,66 @@ export default function PrimaryDataEntry() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+      {/* ── Main Tab Switcher Header (Attached to Top & Full Width) ── */}
+      <div className="section-header">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0.25rem',
+            borderRadius: 'var(--radius-md)',
+            background: '#f1f5f9',
+            border: '1px solid var(--border-color)',
+            gap: '0.25rem'
+          }}
+        >
+          <button
+            className={`btn ${activeTab === 'grades' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
+            onClick={() => setActiveTab('grades')}
+          >
+            <BookOpen size={16} /> Classes & Sections ({classes.length})
+          </button>
+
+          <button
+            className={`btn ${activeTab === 'courses' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
+            onClick={() => setActiveTab('courses')}
+          >
+            <BookMarked size={16} /> Master Course Curriculum ({subjects.length} Courses)
+          </button>
+
+          <button
+            className={`btn ${activeTab === 'eca' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
+            onClick={() => setActiveTab('eca')}
+          >
+            <Activity size={16} /> Non Academics & ECA Schedule ({ecaVerticals.length} Verticals)
+          </button>
+        </div>
+
+        {activeTab === 'grades' && (
+          <button
+            className="btn btn-primary"
+            onClick={() => openSectionModal(selectedClassGrade === 'all' ? '10' : selectedClassGrade)}
+          >
+            <Plus size={16} /> Add Class Section
+          </button>
+        )}
+
+        {activeTab === 'courses' && (
+          <button className="btn btn-primary" onClick={() => openCourseModal()}>
+            <Plus size={16} /> Add Master Course
+          </button>
+        )}
+
+        {activeTab === 'eca' && (
+          <button className="btn btn-primary" onClick={() => setIsAddVerticalModalOpen(true)}>
+            <Plus size={16} /> Add ECA Vertical
+          </button>
+        )}
+      </div>
+
       {/* ── Overview Stat Summary Bar ── */}
       <div className="stats-grid">
         <div className="glass-card stat-card">
@@ -357,44 +430,6 @@ export default function PrimaryDataEntry() {
         </div>
       </div>
 
-      {/* ── Main Tab Switcher Bar ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0.25rem',
-          borderRadius: 'var(--radius-md)',
-          background: '#f1f5f9',
-          border: '1px solid var(--border-color)',
-          gap: '0.25rem',
-          width: 'fit-content'
-        }}
-      >
-        <button
-          className={`btn ${activeTab === 'grades' ? 'btn-primary' : 'btn-secondary'}`}
-          style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
-          onClick={() => setActiveTab('grades')}
-        >
-          <BookOpen size={16} /> Classes & Sections ({classes.length})
-        </button>
-
-        <button
-          className={`btn ${activeTab === 'courses' ? 'btn-primary' : 'btn-secondary'}`}
-          style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
-          onClick={() => setActiveTab('courses')}
-        >
-          <BookMarked size={16} /> Master Course Curriculum ({subjects.length} Courses)
-        </button>
-
-        <button
-          className={`btn ${activeTab === 'eca' ? 'btn-primary' : 'btn-secondary'}`}
-          style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
-          onClick={() => setActiveTab('eca')}
-        >
-          <Activity size={16} /> Non Academics & ECA Schedule ({ecaVerticals.length} Verticals)
-        </button>
-      </div>
-
       {/* ── WORKSPACE 1: CLASSES & SECTIONS SETUP ── */}
       {activeTab === 'grades' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -424,7 +459,7 @@ export default function PrimaryDataEntry() {
                 All Grades ({classes.length} Sections)
               </button>
               {uniqueGrades.map((g) => {
-                const count = classes.filter((c) => String(c.grade) === String(g)).length;
+                const count = classes.filter((c) => getGradeNum(c) === String(g)).length;
                 return (
                   <button
                     key={g}
@@ -450,8 +485,8 @@ export default function PrimaryDataEntry() {
 
           {/* Grouped Grade Level Cards */}
           {(selectedClassGrade === 'all' ? uniqueGrades : [selectedClassGrade]).map((grd) => {
-            const gradeClasses = classes.filter((c) => String(c.grade) === String(grd));
-            const totalStudentsInGrade = gradeClasses.reduce((sum, c) => sum + c.studentCount, 0);
+            const gradeClasses = classes.filter((c) => getGradeNum(c) === String(grd));
+            const totalStudentsInGrade = gradeClasses.reduce((sum, c) => sum + (Number(c.studentCount) || 0), 0);
 
             return (
               <div key={grd} className="glass-card" style={{ padding: '1.5rem' }}>
@@ -568,7 +603,7 @@ export default function PrimaryDataEntry() {
                             <button
                               className="btn btn-secondary"
                               style={{ padding: '0.4rem 0.6rem', color: '#ef4444' }}
-                              onClick={() => deleteClass(cls.id)}
+                              onClick={() => setDeleteTarget({ type: 'class', data: cls })}
                               title="Delete Section"
                             >
                               <Trash2 size={14} />
@@ -745,7 +780,7 @@ export default function PrimaryDataEntry() {
                         <button
                           className="btn btn-secondary"
                           style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: '#ef4444' }}
-                          onClick={() => deleteSubject(subj.id)}
+                          onClick={() => setDeleteTarget({ type: 'subject', data: subj })}
                         >
                           <Trash2 size={13} /> Delete
                         </button>
@@ -831,7 +866,7 @@ export default function PrimaryDataEntry() {
                             cursor: 'pointer',
                             padding: '2px'
                           }}
-                          onClick={() => deleteEcaVertical(vert)}
+                          onClick={() => setDeleteTarget({ type: 'eca', data: vert })}
                           title={`Delete vertical "${vert}"`}
                         >
                           <Trash2 size={12} />
@@ -1178,6 +1213,25 @@ export default function PrimaryDataEntry() {
           </div>
         </form>
       </Modal>
+
+      {/* Deletion Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          if (deleteTarget.type === 'class') {
+            deleteClass(deleteTarget.data.id);
+          } else if (deleteTarget.type === 'subject') {
+            deleteSubject(deleteTarget.data.id);
+          } else if (deleteTarget.type === 'eca') {
+            deleteEcaVertical(deleteTarget.data);
+          }
+        }}
+        title={`Delete ${deleteTarget?.type === 'class' ? 'Class Section' : deleteTarget?.type === 'subject' ? 'Subject' : 'ECA Vertical'}`}
+        message={`Are you sure you want to delete ${deleteTarget?.type === 'class' ? `class section "${deleteTarget?.data?.name}"` : deleteTarget?.type === 'subject' ? `subject "${deleteTarget?.data?.name}" (${deleteTarget?.data?.code})` : `ECA vertical "${deleteTarget?.data}"`}? This action cannot be undone.`}
+        confirmText="Delete"
+      />
     </div>
   );
 }

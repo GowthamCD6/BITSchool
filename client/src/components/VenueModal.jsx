@@ -9,23 +9,28 @@ export default function VenueModal({ isOpen, onClose, venueToEdit }) {
     roomNo: '',
     name: '',
     type: 'normal',
-    capacity: 40,
-    building: 'Main Block',
-    floor: '1st Floor',
+    capacity: '',
+    building: '',
+    floor: '',
     status: 'Available'
   });
 
   useEffect(() => {
     if (venueToEdit) {
-      setFormData(venueToEdit);
+      setFormData({
+        ...venueToEdit,
+        capacity: venueToEdit.capacity !== undefined && venueToEdit.capacity !== null ? venueToEdit.capacity : '',
+        building: venueToEdit.building || '',
+        floor: venueToEdit.floor || ''
+      });
     } else {
       setFormData({
         roomNo: '',
         name: '',
         type: 'normal',
-        capacity: 40,
-        building: 'Main Block',
-        floor: '1st Floor',
+        capacity: '',
+        building: '',
+        floor: '',
         status: 'Available'
       });
     }
@@ -35,10 +40,17 @@ export default function VenueModal({ isOpen, onClose, venueToEdit }) {
     e.preventDefault();
     if (!formData.roomNo || !formData.name) return;
 
+    const payload = {
+      ...formData,
+      capacity: formData.capacity !== '' ? Number(formData.capacity) : 40,
+      building: formData.building || 'Main Block',
+      floor: formData.floor || '1st Floor'
+    };
+
     if (venueToEdit) {
-      updateVenue(formData);
+      updateVenue(payload);
     } else {
-      addVenue(formData);
+      addVenue(payload);
     }
     onClose();
   };
@@ -109,8 +121,9 @@ export default function VenueModal({ isOpen, onClose, venueToEdit }) {
             <input
               type="number"
               className="form-control"
+              placeholder="e.g. 40"
               value={formData.capacity}
-              onChange={(e) => setFormData({ ...formData, capacity: parseInt(e.target.value) || 40 })}
+              onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
             />
           </div>
           <div className="form-group">
@@ -118,7 +131,7 @@ export default function VenueModal({ isOpen, onClose, venueToEdit }) {
             <input
               type="text"
               className="form-control"
-              placeholder="Main Block"
+              placeholder="e.g. Main Block"
               value={formData.building}
               onChange={(e) => setFormData({ ...formData, building: e.target.value })}
             />
@@ -128,7 +141,7 @@ export default function VenueModal({ isOpen, onClose, venueToEdit }) {
             <input
               type="text"
               className="form-control"
-              placeholder="1st Floor"
+              placeholder="e.g. 1st Floor"
               value={formData.floor}
               onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
             />

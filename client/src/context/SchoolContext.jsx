@@ -51,7 +51,15 @@ export function SchoolProvider({ children }) {
     };
   });
 
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabState] = useState(() => {
+    const savedTab = localStorage.getItem('bitschool_active_tab');
+    return savedTab || 'dashboard';
+  });
+
+  const setActiveTab = (tab) => {
+    localStorage.setItem('bitschool_active_tab', tab);
+    setActiveTabState(tab);
+  };
   const [faculties, setFaculties] = useState(() => {
     const saved = localStorage.getItem('bitschool_faculties');
     return saved ? JSON.parse(saved) : INITIAL_FACULTIES;
@@ -120,6 +128,44 @@ export function SchoolProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
 
+  // Fetch Classes, Subjects, Venues, and Faculties from MySQL Backend API on mount
+  useEffect(() => {
+    const fetchDatabaseData = async () => {
+      try {
+        const [classesRes, subjectsRes, venuesRes, facultiesRes] = await Promise.all([
+          fetch('http://localhost:5000/api/classes'),
+          fetch('http://localhost:5000/api/courses'),
+          fetch('http://localhost:5000/api/venues'),
+          fetch('http://localhost:5000/api/faculties')
+        ]);
+
+        if (classesRes.ok) {
+          const data = await classesRes.json();
+          if (data.success && Array.isArray(data.data) && data.data.length > 0) setClasses(data.data);
+        }
+
+        if (subjectsRes.ok) {
+          const data = await subjectsRes.json();
+          if (data.success && Array.isArray(data.data) && data.data.length > 0) setSubjects(data.data);
+        }
+
+        if (venuesRes.ok) {
+          const data = await venuesRes.json();
+          if (data.success && Array.isArray(data.data) && data.data.length > 0) setVenues(data.data);
+        }
+
+        if (facultiesRes.ok) {
+          const data = await facultiesRes.json();
+          if (data.success && Array.isArray(data.data) && data.data.length > 0) setFaculties(data.data);
+        }
+      } catch (err) {
+        console.warn('Backend API connection notice (using database cache):', err.message);
+      }
+    };
+
+    fetchDatabaseData();
+  }, []);
+
   // Save to localStorage
   useEffect(() => {
     localStorage.setItem('bitschool_faculties', JSON.stringify(faculties));
@@ -158,6 +204,8 @@ export function SchoolProvider({ children }) {
 
   const logout = () => {
     setIsAuthenticated(false);
+    localStorage.removeItem('bitschool_active_tab');
+    setActiveTabState('dashboard');
     showToast('Signed out successfully.', 'warning');
   };
 
@@ -255,92 +303,188 @@ export function SchoolProvider({ children }) {
       .sort((a, b) => b.localeCompare(a));
   }, [weeklyTimetables]);
 
-  // Faculty CRUD
-  const addFaculty = (newFaculty) => {
-    const created = {
-      ...newFaculty,
-      id: `f_${Date.now()}`,
-      empId: `FAC-0${faculties.length + 10}`,
-      status: 'Active',
-      avatarColor: ['#4f46e5', '#059669', '#0891b2', '#7c3aed', '#d97706', '#db2777'][Math.floor(Math.random() * 6)]
-    };
-    setFaculties([...faculties, created]);
-    showToast(`Faculty member "${created.name}" added successfully.`);
+  // Faculty CRUD (MySQL API)
+  const addFaculty = async (newFaculty) => {
+    try {
+      const res = await fetch('http://localhost:5000/api/faculties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newFaculty)
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setFaculties(prev => [...prev, data.data]);
+        showToast(`Faculty member "${data.data.name}" added successfully.`);
+      }
+    } catch (err) {
+      showToast('Failed to add faculty member to database.', 'danger');
+    }
   };
 
-  const updateFaculty = (updatedFaculty) => {
-    setFaculties(faculties.map(f => f.id === updatedFaculty.id ? updatedFaculty : f));
-    showToast(`Faculty profile updated for ${updatedFaculty.name}.`);
+  const updateFaculty = async (updatedFaculty) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/faculties/${updatedFaculty.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFaculty)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFaculties(prev => prev.map(f => f.id === updatedFaculty.id ? updatedFaculty : f));
+        showToast(`Faculty profile updated for ${updatedFaculty.name}.`);
+      }
+    } catch (err) {
+      showToast('Failed to update faculty member.', 'danger');
+    }
   };
 
-  const deleteFaculty = (facultyId) => {
-    const f = faculties.find(fac => fac.id === facultyId);
-    setFaculties(faculties.filter(fac => fac.id !== facultyId));
-    showToast(`Faculty ${f?.name || ''} removed.`, 'warning');
+  const deleteFaculty = async (facultyId) => {
+    try {
+      const f = faculties.find(fac => fac.id === facultyId);
+      await fetch(`http://localhost:5000/api/faculties/${facultyId}`, { method: 'DELETE' });
+      setFaculties(prev => prev.filter(fac => fac.id !== facultyId));
+      showToast(`Faculty ${f?.name || ''} removed.`, 'warning');
+    } catch (err) {
+      showToast('Failed to delete faculty member.', 'danger');
+    }
   };
 
-  // Venue CRUD
-  const addVenue = (newVenue) => {
-    const created = {
-      ...newVenue,
-      id: `v_${Date.now()}`,
-      status: 'Available'
-    };
-    setVenues([...venues, created]);
-    showToast(`Venue "${created.roomNo} - ${created.name}" added.`);
+  // Venue CRUD (MySQL API)
+  const addVenue = async (newVenue) => {
+    try {
+      const res = await fetch('http://localhost:5000/api/venues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newVenue)
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setVenues(prev => [...prev, data.data]);
+        showToast(`Venue "${data.data.roomNo} - ${data.data.name}" added.`);
+      }
+    } catch (err) {
+      showToast('Failed to add venue.', 'danger');
+    }
   };
 
-  const updateVenue = (updatedVenue) => {
-    setVenues(venues.map(v => v.id === updatedVenue.id ? updatedVenue : v));
-    showToast(`Venue details updated for ${updatedVenue.roomNo}.`);
+  const updateVenue = async (updatedVenue) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/venues/${updatedVenue.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedVenue)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setVenues(prev => prev.map(v => v.id === updatedVenue.id ? updatedVenue : v));
+        showToast(`Venue details updated for ${updatedVenue.roomNo}.`);
+      }
+    } catch (err) {
+      showToast('Failed to update venue.', 'danger');
+    }
   };
 
-  const deleteVenue = (venueId) => {
-    const v = venues.find(ven => ven.id === venueId);
-    setVenues(venues.filter(ven => ven.id !== venueId));
-    showToast(`Venue ${v?.roomNo || ''} removed.`, 'warning');
+  const deleteVenue = async (venueId) => {
+    try {
+      const v = venues.find(ven => ven.id === venueId);
+      await fetch(`http://localhost:5000/api/venues/${venueId}`, { method: 'DELETE' });
+      setVenues(prev => prev.filter(ven => ven.id !== venueId));
+      showToast(`Venue ${v?.roomNo || ''} removed.`, 'warning');
+    } catch (err) {
+      showToast('Failed to delete venue.', 'danger');
+    }
   };
 
-  // Class CRUD
-  const addClass = (newClass) => {
-    const created = {
-      ...newClass,
-      id: `c_${Date.now()}`
-    };
-    setClasses([...classes, created]);
-    showToast(`Class "${created.name}" created.`);
+  // Class CRUD (MySQL API)
+  const addClass = async (newClass) => {
+    try {
+      const res = await fetch('http://localhost:5000/api/classes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newClass)
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setClasses(prev => [...prev, data.data]);
+        showToast(`Class "${data.data.name}" created.`);
+      }
+    } catch (err) {
+      showToast('Failed to create class in database.', 'danger');
+    }
   };
 
-  const updateClass = (updatedClass) => {
-    setClasses(classes.map(c => c.id === updatedClass.id ? updatedClass : c));
-    showToast(`Class "${updatedClass.name}" updated.`);
+  const updateClass = async (updatedClass) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/classes/${updatedClass.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedClass)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setClasses(prev => prev.map(c => c.id === updatedClass.id ? updatedClass : c));
+        showToast(`Class "${updatedClass.name}" updated.`);
+      }
+    } catch (err) {
+      showToast('Failed to update class.', 'danger');
+    }
   };
 
-  const deleteClass = (classId) => {
-    const c = classes.find(item => item.id === classId);
-    setClasses(classes.filter(item => item.id !== classId));
-    showToast(`Class "${c?.name || ''}" removed.`, 'warning');
+  const deleteClass = async (classId) => {
+    try {
+      const c = classes.find(item => item.id === classId);
+      await fetch(`http://localhost:5000/api/classes/${classId}`, { method: 'DELETE' });
+      setClasses(prev => prev.filter(item => item.id !== classId));
+      showToast(`Class "${c?.name || ''}" removed.`, 'warning');
+    } catch (err) {
+      showToast('Failed to delete class from database.', 'danger');
+    }
   };
 
-  // Subject CRUD
-  const addSubject = (newSubj) => {
-    const created = {
-      ...newSubj,
-      id: `s_${Date.now()}`
-    };
-    setSubjects([...subjects, created]);
-    showToast(`Subject "${created.name}" (${created.code}) added.`);
+  // Subject CRUD (MySQL API)
+  const addSubject = async (newSubj) => {
+    try {
+      const res = await fetch('http://localhost:5000/api/courses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSubj)
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setSubjects(prev => [...prev, data.data]);
+        showToast(`Subject "${data.data.name}" (${data.data.code}) added.`);
+      }
+    } catch (err) {
+      showToast('Failed to create subject in database.', 'danger');
+    }
   };
 
-  const updateSubject = (updatedSubj) => {
-    setSubjects(subjects.map(s => s.id === updatedSubj.id ? updatedSubj : s));
-    showToast(`Subject "${updatedSubj.name}" updated.`);
+  const updateSubject = async (updatedSubj) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/courses/${updatedSubj.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedSubj)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSubjects(prev => prev.map(s => s.id === updatedSubj.id ? updatedSubj : s));
+        showToast(`Subject "${updatedSubj.name}" updated.`);
+      }
+    } catch (err) {
+      showToast('Failed to update subject.', 'danger');
+    }
   };
 
-  const deleteSubject = (subjectId) => {
-    const s = subjects.find(subj => subj.id === subjectId);
-    setSubjects(subjects.filter(subj => subj.id !== subjectId));
-    showToast(`Subject "${s?.name || ''}" removed.`, 'warning');
+  const deleteSubject = async (subjectId) => {
+    try {
+      const s = subjects.find(subj => subj.id === subjectId);
+      await fetch(`http://localhost:5000/api/courses/${subjectId}`, { method: 'DELETE' });
+      setSubjects(prev => prev.filter(subj => subj.id !== subjectId));
+      showToast(`Subject "${s?.name || ''}" removed.`, 'warning');
+    } catch (err) {
+      showToast('Failed to delete subject from database.', 'danger');
+    }
   };
 
   // Update a single Timetable cell slot (within active week)

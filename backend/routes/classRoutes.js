@@ -1,8 +1,9 @@
 import express from 'express';
-import { getClasses, createClass, updateClass, deleteClass } from '../controllers/classController.js';
+import { getClasses, createClass, updateClass, deleteClass, getGrades } from '../controllers/classController.js';
 
 const router = express.Router();
 
+router.get('/grades', getGrades);
 router.get('/', getClasses);
 router.post('/', createClass);
 router.put('/:id', updateClass);

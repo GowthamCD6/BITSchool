@@ -1,17 +1,27 @@
 import React, { useState } from 'react';
-import { useSchool } from '../context/SchoolContext';
-import FacultyModal from '../components/FacultyModal';
-import { Plus, Search, Mail, Phone, Edit, Trash2, BookOpen, Clock } from 'lucide-react';
+import { useSchool } from '../../context/SchoolContext';
+import FacultyModal from '../../components/FacultyModal';
+import ConfirmModal from '../../components/ConfirmModal';
+import EmptyState from '../../components/EmptyState';
+import { Plus, Search, Mail, Phone, Edit, Trash2, BookOpen, Clock, Users } from 'lucide-react';
 
 export default function FacultyManagement() {
-  const { faculties, subjects, deleteFaculty } = useSchool();
+  const { classes, faculties, subjects, deleteFaculty } = useSchool();
 
   const [search, setSearch] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('ALL');
   const [gradeFilter, setGradeFilter] = useState('ALL');
 
+  // Extract unique Grade levels dynamically from database classes
+  const uniqueGradeLevels = Array.from(
+    new Set(classes.map((c) => String(c.grade || c.gradeName)))
+  ).sort((a, b) => Number(a) - Number(b));
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [facultyToEdit, setFacultyToEdit] = useState(null);
+
+  // Deletion Confirmation State
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const handleOpenAdd = () => {
     setFacultyToEdit(null);
@@ -23,16 +33,22 @@ export default function FacultyManagement() {
     setIsModalOpen(true);
   };
 
+  const confirmDelete = (fac) => {
+    setDeleteTarget(fac);
+  };
+
   const filteredFaculties = faculties.filter((fac) => {
     const matchesSearch =
       fac.name.toLowerCase().includes(search.toLowerCase()) ||
       fac.empId.toLowerCase().includes(search.toLowerCase());
 
+    const allSubjectIds = [fac.primarySubjectId, ...(fac.secondarySubjectIds || [])].filter(Boolean);
+
     const matchesSubject =
-      subjectFilter === 'ALL' || fac.primarySubjectId === subjectFilter;
+      subjectFilter === 'ALL' || allSubjectIds.includes(subjectFilter);
 
     const matchesGrade =
-      gradeFilter === 'ALL' || fac.grades.some((g) => g.includes(gradeFilter));
+      gradeFilter === 'ALL' || (Array.isArray(fac.grades) && fac.grades.some((g) => g.includes(gradeFilter)));
 
     return matchesSearch && matchesSubject && matchesGrade;
   });
@@ -71,10 +87,11 @@ export default function FacultyManagement() {
             onChange={(e) => setGradeFilter(e.target.value)}
           >
             <option value="ALL">All Grades</option>
-            <option value="8">Grade 8</option>
-            <option value="9">Grade 9</option>
-            <option value="10">Grade 10</option>
-            <option value="11">Grade 11</option>
+            {uniqueGradeLevels.map((g) => (
+              <option key={g} value={g}>
+                Grade {g}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -83,13 +100,23 @@ export default function FacultyManagement() {
         </button>
       </div>
 
-      {/* Faculty Cards Grid */}
-      <div className="cards-grid">
-        {filteredFaculties.map((fac) => {
-          const primarySubj = subjects.find((s) => s.id === fac.primarySubjectId);
+      {/* Faculty Cards Grid / Empty State */}
+      {filteredFaculties.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No Faculty Data Available"
+          description="There are currently no teaching staff or faculty members configured. Click below to add a new faculty profile to your institution."
+          actionText="Add New Faculty"
+          onAction={handleOpenAdd}
+        />
+      ) : (
+        <div className="cards-grid">
+          {filteredFaculties.map((fac) => {
+            const allSubjectIds = [fac.primarySubjectId, ...(fac.secondarySubjectIds || [])].filter(Boolean);
+            const coveredSubjects = subjects.filter((s) => allSubjectIds.includes(s.id));
 
-          return (
-            <div key={fac.id} className="glass-card faculty-card">
+            return (
+              <div key={fac.id} className="glass-card faculty-card">
               <div>
                 <div className="card-top">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
@@ -112,21 +139,40 @@ export default function FacultyManagement() {
                   </span>
                 </div>
 
-                {/* Main Subject Covering */}
+                {/* Covered Subjects */}
                 <div
                   style={{
-                    padding: '0.5rem 0.75rem',
+                    padding: '0.6rem 0.75rem',
                     borderRadius: '8px',
                     background: '#f8fafc',
                     border: '1px solid var(--border-color)',
                     marginBottom: '0.85rem'
                   }}
                 >
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                    Main Subject Covering
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem' }}>
+                    Subjects Covering ({coveredSubjects.length})
                   </div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: primarySubj?.color || 'var(--primary)', marginTop: '2px' }}>
-                    {primarySubj ? primarySubj.name : 'Unassigned'}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                    {coveredSubjects.length > 0 ? (
+                      coveredSubjects.map((subj) => (
+                        <span
+                          key={subj.id}
+                          style={{
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            padding: '0.2rem 0.6rem',
+                            borderRadius: '6px',
+                            background: `${subj.color || '#2563eb'}18`,
+                            color: subj.color || '#2563eb',
+                            border: `1px solid ${subj.color || '#2563eb'}40`
+                          }}
+                        >
+                          {subj.name}
+                        </span>
+                      ))
+                    ) : (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Unassigned</span>
+                    )}
                   </div>
                 </div>
 
@@ -198,7 +244,7 @@ export default function FacultyManagement() {
                 </button>
                 <button
                   className="btn btn-danger btn-icon-only"
-                  onClick={() => deleteFaculty(fac.id)}
+                  onClick={() => confirmDelete(fac)}
                   title="Remove Faculty Member"
                 >
                   <Trash2 size={16} />
@@ -208,12 +254,25 @@ export default function FacultyManagement() {
           );
         })}
       </div>
+      )}
 
       {/* Add / Edit Modal */}
       <FacultyModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         facultyToEdit={facultyToEdit}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) deleteFaculty(deleteTarget.id);
+        }}
+        title="Delete Faculty Member"
+        message={`Are you sure you want to delete faculty member "${deleteTarget?.name}" (${deleteTarget?.empId})? This action cannot be undone.`}
+        confirmText="Delete Faculty"
       />
     </div>
   );

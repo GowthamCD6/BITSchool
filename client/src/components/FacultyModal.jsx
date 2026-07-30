@@ -3,9 +3,10 @@ import Modal from './Modal';
 import { useSchool } from '../context/SchoolContext';
 
 export default function FacultyModal({ isOpen, onClose, facultyToEdit }) {
-  const { subjects, addFaculty, updateFaculty } = useSchool();
+  const { classes, subjects, addFaculty, updateFaculty } = useSchool();
 
-  const gradeOptions = ['Grade 8-A', 'Grade 9-A', 'Grade 9-B', 'Grade 10-A', 'Grade 10-B', 'Grade 11-A'];
+  // Dynamically derive Grade Undertaking options from MySQL classes database
+  const gradeOptions = classes.map((c) => c.name);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -13,9 +14,9 @@ export default function FacultyModal({ isOpen, onClose, facultyToEdit }) {
     phone: '',
     primarySubjectId: '',
     secondarySubjectIds: [],
-    grades: ['Grade 9-A', 'Grade 10-A'],
-    maxPeriodsPerDay: 5,
-    maxPeriodsPerWeek: 25
+    grades: [],
+    maxPeriodsPerDay: '',
+    maxPeriodsPerWeek: ''
   });
 
   useEffect(() => {
@@ -24,32 +25,40 @@ export default function FacultyModal({ isOpen, onClose, facultyToEdit }) {
         ...facultyToEdit,
         primarySubjectId: facultyToEdit.primarySubjectId || (subjects[0]?.id || ''),
         secondarySubjectIds: facultyToEdit.secondarySubjectIds || [],
-        grades: facultyToEdit.grades || []
+        grades: facultyToEdit.grades || [],
+        maxPeriodsPerDay: facultyToEdit.maxPeriodsPerDay !== undefined ? facultyToEdit.maxPeriodsPerDay : '',
+        maxPeriodsPerWeek: facultyToEdit.maxPeriodsPerWeek !== undefined ? facultyToEdit.maxPeriodsPerWeek : ''
       });
     } else {
       setFormData({
         name: '',
         email: '',
         phone: '',
-        primarySubjectId: subjects[0]?.id || '',
+        primarySubjectId: '',
         secondarySubjectIds: [],
-        grades: ['Grade 9-A', 'Grade 10-A'],
-        maxPeriodsPerDay: 5,
-        maxPeriodsPerWeek: 25
+        grades: [],
+        maxPeriodsPerDay: '',
+        maxPeriodsPerWeek: ''
       });
     }
   }, [facultyToEdit, subjects, isOpen]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!formData.name || !formData.primarySubjectId) return;
-
-    if (facultyToEdit) {
-      updateFaculty(formData);
-    } else {
-      addFaculty(formData);
-    }
-    onClose();
+  const handleSubjectToggle = (subjectId) => {
+    setFormData((prev) => {
+      const secondary = prev.secondarySubjectIds || [];
+      const allSelected = [prev.primarySubjectId, ...secondary].filter(Boolean);
+      let nextSelected;
+      if (allSelected.includes(subjectId)) {
+        nextSelected = allSelected.filter((sId) => sId !== subjectId);
+      } else {
+        nextSelected = [...allSelected, subjectId];
+      }
+      return {
+        ...prev,
+        primarySubjectId: nextSelected[0] || '',
+        secondarySubjectIds: nextSelected.slice(1)
+      };
+    });
   };
 
   const handleGradeToggle = (grade) => {
@@ -61,6 +70,26 @@ export default function FacultyModal({ isOpen, onClose, facultyToEdit }) {
       };
     });
   };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.name || !formData.primarySubjectId) return;
+
+    const payload = {
+      ...formData,
+      maxPeriodsPerDay: formData.maxPeriodsPerDay !== '' ? Number(formData.maxPeriodsPerDay) : 5,
+      maxPeriodsPerWeek: formData.maxPeriodsPerWeek !== '' ? Number(formData.maxPeriodsPerWeek) : 25
+    };
+
+    if (facultyToEdit) {
+      updateFaculty(payload);
+    } else {
+      addFaculty(payload);
+    }
+    onClose();
+  };
+
+  const allSelectedSubjects = [formData.primarySubjectId, ...(formData.secondarySubjectIds || [])].filter(Boolean);
 
   return (
     <Modal
@@ -114,21 +143,49 @@ export default function FacultyModal({ isOpen, onClose, facultyToEdit }) {
           </div>
         </div>
 
+        {/* Multi-Subject Selection */}
         <div className="form-group">
-          <label>Main Subject Covering *</label>
-          <select
-            className="form-control"
-            value={formData.primarySubjectId}
-            onChange={(e) => setFormData({ ...formData, primarySubjectId: e.target.value })}
-          >
-            {subjects.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.code})
-              </option>
-            ))}
-          </select>
+          <label>Subjects Covering (Select one or more) *</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.35rem' }}>
+            {subjects.map((s) => {
+              const checked = allSelectedSubjects.includes(s.id);
+              return (
+                <button
+                  type="button"
+                  key={s.id}
+                  onClick={() => handleSubjectToggle(s.id)}
+                  style={{
+                    padding: '0.4rem 0.85rem',
+                    borderRadius: '8px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    border: '1.5px solid',
+                    borderColor: checked ? (s.color || '#2563eb') : 'var(--border-color)',
+                    background: checked ? `${s.color || '#2563eb'}18` : '#f8fafc',
+                    color: checked ? (s.color || '#2563eb') : 'var(--text-sub)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: s.color || '#2563eb'
+                    }}
+                  />
+                  <span>{s.name} ({s.code})</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
+        {/* Dynamic Grade Options from MySQL */}
         <div className="form-group">
           <label>Grades Undertaking</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.3rem' }}>
@@ -166,8 +223,9 @@ export default function FacultyModal({ isOpen, onClose, facultyToEdit }) {
               min="1"
               max="8"
               className="form-control"
+              placeholder="e.g. 5"
               value={formData.maxPeriodsPerDay}
-              onChange={(e) => setFormData({ ...formData, maxPeriodsPerDay: parseInt(e.target.value) || 5 })}
+              onChange={(e) => setFormData({ ...formData, maxPeriodsPerDay: e.target.value })}
             />
           </div>
           <div className="form-group">
@@ -177,8 +235,9 @@ export default function FacultyModal({ isOpen, onClose, facultyToEdit }) {
               min="5"
               max="40"
               className="form-control"
+              placeholder="e.g. 25"
               value={formData.maxPeriodsPerWeek}
-              onChange={(e) => setFormData({ ...formData, maxPeriodsPerWeek: parseInt(e.target.value) || 25 })}
+              onChange={(e) => setFormData({ ...formData, maxPeriodsPerWeek: e.target.value })}
             />
           </div>
         </div>
