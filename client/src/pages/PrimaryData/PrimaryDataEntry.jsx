@@ -31,6 +31,9 @@ export default function PrimaryDataEntry() {
     subjects,
     venues,
     venueTypes,
+    grades,
+    addGrade,
+    deleteGrade,
     addClass,
     updateClass,
     deleteClass,
@@ -64,9 +67,13 @@ export default function PrimaryDataEntry() {
     return String(c.grade || '10').replace('Grade ', '');
   };
 
-  const uniqueGrades = Array.from(new Set(classes.map(getGradeNum))).sort(
-    (a, b) => Number(a) - Number(b)
-  );
+  // Extract unique Grade levels dynamically from MySQL grades table + classes
+  const uniqueGrades = Array.from(
+    new Set([
+      ...(grades || []).map((g) => String(g.id || String(g.name).replace(/\D/g, ''))),
+      ...classes.map(getGradeNum)
+    ].filter(Boolean))
+  ).sort((a, b) => Number(a) - Number(b));
 
   // Derived filtered classes
   const filteredClasses = selectedClassGrade === 'all'
@@ -82,7 +89,12 @@ export default function PrimaryDataEntry() {
 
   // New Grade Modal State
   const [isAddGradeModalOpen, setIsAddGradeModalOpen] = useState(false);
-  const [newGradeLevel, setNewGradeLevel] = useState('12');
+  const [newGradeLevel, setNewGradeLevel] = useState('');
+
+  const openAddGradeModal = () => {
+    setNewGradeLevel('');
+    setIsAddGradeModalOpen(true);
+  };
 
   // Section Modal States (Add / Edit)
   const [isSectionModalOpen, setIsSectionModalOpen] = useState(false);
@@ -120,7 +132,7 @@ export default function PrimaryDataEntry() {
   const [newVerticalName, setNewVerticalName] = useState('');
 
   // ── Grade Handlers ──
-  const handleCreateGrade = (e) => {
+  const handleCreateGrade = async (e) => {
     e.preventDefault();
     if (!newGradeLevel) return;
 
@@ -129,30 +141,71 @@ export default function PrimaryDataEntry() {
       return;
     }
 
-    const defaultClassName = `Grade ${newGradeLevel}-A`;
-    addClass({
-      name: defaultClassName,
-      grade: String(newGradeLevel),
-      section: 'A',
-      studentCount: 35,
-      homeVenueId: venues[0]?.id || ''
+    const gNum = Number(newGradeLevel);
+    let gLevel = 'High School';
+    if (gNum >= 11) gLevel = 'Higher Secondary';
+    else if (gNum >= 9) gLevel = 'High School';
+    else if (gNum >= 6) gLevel = 'Middle School';
+    else gLevel = 'Primary School';
+
+    // 1. Save grade record into MySQL 'grades' table
+    await addGrade({
+      id: isNaN(gNum) ? undefined : gNum,
+      name: `Grade ${newGradeLevel}`,
+      level: gLevel
     });
 
     setIsAddGradeModalOpen(false);
-    showToast(`Grade ${newGradeLevel} created with initial section Grade ${newGradeLevel}-A.`);
+  };
+
+  const confirmDeleteGrade = (grd) => {
+    const targetGrade = grades.find((g) => String(g.id) === String(grd) || g.name === `Grade ${grd}`) || { id: grd, name: `Grade ${grd}` };
+    setDeleteTarget({
+      type: 'grade',
+      data: targetGrade
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    if (deleteTarget.type === 'grade') {
+      const gId = deleteTarget.data.id || deleteTarget.data;
+      await deleteGrade(gId);
+      const associatedClasses = classes.filter((c) => getGradeNum(c) === String(gId));
+      for (const cls of associatedClasses) {
+        await deleteClass(cls.id);
+      }
+    } else if (deleteTarget.type === 'class') {
+      await deleteClass(deleteTarget.data.id);
+    } else if (deleteTarget.type === 'subject') {
+      await deleteSubject(deleteTarget.data.id);
+    } else if (deleteTarget.type === 'eca') {
+      await deleteEcaVertical(deleteTarget.data.id || deleteTarget.data);
+    }
+
+    setDeleteTarget(null);
   };
 
   // ── Section Handlers ──
   const openSectionModal = (targetGrade = '10', sectionToEdit = null) => {
     if (sectionToEdit) {
       setEditingSection(sectionToEdit);
-      setSectionForm({ ...sectionToEdit });
+      const gVal = getGradeNum(sectionToEdit);
+      setSectionForm({
+        ...sectionToEdit,
+        grade: `Grade ${gVal}`,
+        section: sectionToEdit.section || '',
+        studentCount: sectionToEdit.studentCount !== undefined ? sectionToEdit.studentCount : '',
+        homeVenueId: sectionToEdit.homeVenueId || (venues[0]?.id || '')
+      });
     } else {
       setEditingSection(null);
+      const gVal = typeof targetGrade === 'object' ? getGradeNum({ grade: targetGrade }) : String(targetGrade).replace('Grade ', '');
       setSectionForm({
-        grade: String(targetGrade),
-        section: 'C',
-        studentCount: 38,
+        grade: `Grade ${gVal || '10'}`,
+        section: '',
+        studentCount: '',
         homeVenueId: venues[0]?.id || ''
       });
     }
@@ -161,15 +214,17 @@ export default function PrimaryDataEntry() {
 
   const handleSectionSubmit = (e) => {
     e.preventDefault();
-    const className = `Grade ${sectionForm.grade}-${sectionForm.section.toUpperCase()}`;
+    const cleanGradeNum = String(sectionForm.grade).replace('Grade ', '').trim();
+    const className = `Grade ${cleanGradeNum}-${sectionForm.section.toUpperCase()}`;
 
     if (editingSection) {
       updateClass({
         ...editingSection,
-        ...sectionForm,
         name: className,
+        grade: cleanGradeNum,
         section: sectionForm.section.toUpperCase(),
-        studentCount: Number(sectionForm.studentCount) || 35
+        studentCount: Number(sectionForm.studentCount) || 35,
+        homeVenueId: sectionForm.homeVenueId
       });
     } else {
       if (classes.some((c) => c.name === className)) {
@@ -178,7 +233,7 @@ export default function PrimaryDataEntry() {
       }
       addClass({
         name: className,
-        grade: String(sectionForm.grade),
+        grade: cleanGradeNum,
         section: sectionForm.section.toUpperCase(),
         studentCount: Number(sectionForm.studentCount) || 35,
         homeVenueId: sectionForm.homeVenueId
@@ -188,16 +243,64 @@ export default function PrimaryDataEntry() {
     setIsSectionModalOpen(false);
   };
 
+  // ── Helper: Format duration to HH:MM ──
+  const formatToHHMM = (val) => {
+    if (!val && val !== 0) return '06:00';
+    const str = String(val).trim();
+    if (/^\d{2}:\d{2}$/.test(str)) return str;
+    if (/^\d{2}:\d{2}:\d{2}$/.test(str)) return str.substring(0, 5);
+    if (/^\d{1,2}:\d{2}$/.test(str)) {
+      const [h, m] = str.split(':');
+      return `${String(h).padStart(2, '0')}:${m}`;
+    }
+    const num = parseFloat(str);
+    if (!isNaN(num)) {
+      const hrs = Math.floor(num);
+      const mins = Math.round((num - hrs) * 60);
+      return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    }
+    return '06:00';
+  };
+
+  const parseHHMMToHours = (val) => {
+    if (!val && val !== 0) return 0;
+    const str = String(val).trim();
+    if (/^\d{2}:\d{2}/.test(str)) {
+      const [h, m] = str.split(':').map(Number);
+      return h + (m || 0) / 60;
+    }
+    return parseFloat(str) || 0;
+  };
+
   // ── Course / Subject Handlers ──
-  const openCourseModal = (subjToEdit = null) => {
-    if (subjToEdit) {
-      setEditingSubject(subjToEdit);
-      setCourseForm({ ...subjToEdit });
+  const openCourseModal = (targetGrade = null, subjToEdit = null) => {
+    let gVal = '';
+    let editObj = subjToEdit;
+
+    if (typeof targetGrade === 'object' && targetGrade !== null) {
+      editObj = targetGrade;
+      gVal = String(editObj.grade || selectedCourseGrade || uniqueGrades[0] || '10').replace('Grade ', '');
+    } else if (targetGrade) {
+      gVal = String(targetGrade).replace('Grade ', '');
+    } else {
+      gVal = String(selectedCourseGrade !== 'all' ? selectedCourseGrade : (uniqueGrades[0] || '10')).replace('Grade ', '');
+    }
+
+    if (editObj) {
+      setEditingSubject(editObj);
+      setCourseForm({
+        ...editObj,
+        grade: String(editObj.grade || gVal).replace('Grade ', ''),
+        weeklyDuration: formatToHHMM(editObj.weeklyDuration || editObj.weeklyPeriods || '06:00'),
+        weeklyPeriods: Number(editObj.weeklyPeriods) || 6
+      });
     } else {
       setEditingSubject(null);
       setCourseForm({
         code: '',
         name: '',
+        grade: gVal || (uniqueGrades[0] || '10'),
+        weeklyDuration: '06:00',
         weeklyPeriods: 6,
         requiredVenueType: 'normal',
         color: '#2563eb'
@@ -213,16 +316,24 @@ export default function PrimaryDataEntry() {
       return;
     }
 
+    const cleanGrade = String(courseForm.grade || uniqueGrades[0] || '10').replace('Grade ', '').trim();
+    const formattedDuration = formatToHHMM(courseForm.weeklyDuration);
+    const periodsCount = Number(courseForm.weeklyPeriods) || 6;
+
     if (editingSubject) {
       updateSubject({
         ...editingSubject,
         ...courseForm,
-        weeklyPeriods: Number(courseForm.weeklyPeriods) || 5
+        grade: cleanGrade,
+        weeklyDuration: formattedDuration,
+        weeklyPeriods: periodsCount
       });
     } else {
       addSubject({
         ...courseForm,
-        weeklyPeriods: Number(courseForm.weeklyPeriods) || 5
+        grade: cleanGrade,
+        weeklyDuration: formattedDuration,
+        weeklyPeriods: periodsCount
       });
     }
 
@@ -314,7 +425,7 @@ export default function PrimaryDataEntry() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
       {/* ── Main Tab Switcher Header (Attached to Top & Full Width) ── */}
       <div className="section-header">
         <div
@@ -356,9 +467,9 @@ export default function PrimaryDataEntry() {
         {activeTab === 'grades' && (
           <button
             className="btn btn-primary"
-            onClick={() => openSectionModal(selectedClassGrade === 'all' ? '10' : selectedClassGrade)}
+            onClick={openAddGradeModal}
           >
-            <Plus size={16} /> Add Class Section
+            <Plus size={16} /> Add Grade Level
           </button>
         )}
 
@@ -408,7 +519,7 @@ export default function PrimaryDataEntry() {
             <div className="stat-lbl">Master Course Curriculum</div>
             <div className="stat-val">{subjects.length} Courses</div>
             <div style={{ fontSize: '0.78rem', color: 'var(--accent-purple)', marginTop: '0.35rem', fontWeight: 600 }}>
-              {subjects.reduce((sum, s) => sum + s.weeklyPeriods, 0)} Total Period Quotas
+              {subjects.reduce((sum, s) => sum + (Number(s.weeklyPeriods) || 0), 0)} Total Weekly Hours
             </div>
           </div>
           <div className="stat-icon" style={{ background: '#f3e8ff', color: '#7c3aed' }}>
@@ -476,9 +587,9 @@ export default function PrimaryDataEntry() {
             <button
               className="btn btn-primary"
               style={{ padding: '0.45rem 1rem', fontSize: '0.82rem', whiteSpace: 'nowrap' }}
-              onClick={() => openSectionModal(selectedClassGrade === 'all' ? '10' : selectedClassGrade)}
+              onClick={openAddGradeModal}
             >
-              <Plus size={16} /> Add Class Section
+              <Plus size={16} /> Add Grade Level
             </button>
           </div>
 
@@ -527,23 +638,59 @@ export default function PrimaryDataEntry() {
                     </div>
                   </div>
 
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem' }}
-                    onClick={() => openSectionModal(grd)}
-                  >
-                    <Plus size={14} /> Add Section to Grade {grd}
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem' }}
+                      onClick={() => openSectionModal(grd)}
+                    >
+                      <Plus size={14} /> Add Section to Grade {grd}
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', color: '#dc2626', borderColor: '#fecaca', background: '#fef2f2' }}
+                      title={`Delete Grade ${grd}`}
+                      onClick={() => confirmDeleteGrade(grd)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
 
-                {/* Section Cards Grid for this Grade */}
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                    gap: '1.25rem'
-                  }}
-                >
+                {/* Section Cards Grid / Empty State for this Grade */}
+                {gradeClasses.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '1.25rem',
+                      borderRadius: 'var(--radius-md)',
+                      background: '#f8fafc',
+                      border: '1.5px dashed #cbd5e1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '1rem',
+                      flexWrap: 'wrap'
+                    }}
+                  >
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-sub)', fontWeight: 500 }}>
+                      No class sections created for <strong>Grade {grd}</strong> yet. Click the button to add sections.
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                      onClick={() => openSectionModal(grd)}
+                    >
+                      <Plus size={14} /> Add Section to Grade {grd}
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                      gap: '1.25rem'
+                    }}
+                  >
                   {gradeClasses.map((cls) => {
                     const venue = venues.find((v) => v.id === cls.homeVenueId);
 
@@ -644,7 +791,7 @@ export default function PrimaryDataEntry() {
                     );
                   })}
                 </div>
-
+                )}
               </div>
             );
           })}
@@ -654,7 +801,7 @@ export default function PrimaryDataEntry() {
 
       {/* ── WORKSPACE 2: MASTER COURSE CURRICULUM ── */}
       {activeTab === 'courses' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Grade Filter Pill Selector & Action Button */}
           <div
             style={{
@@ -671,126 +818,205 @@ export default function PrimaryDataEntry() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '0.5rem' }}>
-                Filter by Target Grade:
+                Select Target Grade:
               </span>
-              <button
-                className={`btn ${selectedCourseGrade === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
-                onClick={() => setSelectedCourseGrade('all')}
-              >
-                All Grades ({subjects.length})
-              </button>
-              {uniqueGrades.map((g) => (
-                <button
-                  key={g}
-                  className={`btn ${selectedCourseGrade === g ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
-                  onClick={() => setSelectedCourseGrade(g)}
-                >
-                  Grade {g}
-                </button>
-              ))}
+              {uniqueGrades.map((g) => {
+                const isSel = (selectedCourseGrade === g) || (selectedCourseGrade === 'all' && uniqueGrades[0] === g);
+                return (
+                  <button
+                    key={g}
+                    className={`btn ${isSel ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                    onClick={() => setSelectedCourseGrade(g)}
+                  >
+                    Grade {g}
+                  </button>
+                );
+              })}
             </div>
 
             <button
               className="btn btn-primary"
               style={{ padding: '0.45rem 1rem', fontSize: '0.82rem', whiteSpace: 'nowrap' }}
-              onClick={() => openCourseModal()}
+              onClick={() => openCourseModal(selectedCourseGrade !== 'all' ? selectedCourseGrade : uniqueGrades[0])}
             >
               <Plus size={16} /> Add Course
             </button>
           </div>
 
-          {/* Master Course Table */}
-          <div className="glass-card" style={{ padding: '1.25rem', overflowX: 'auto' }}>
-            <table className="table-custom">
-              <thead>
-                <tr>
-                  <th>Course Code</th>
-                  <th>Subject / Course Name</th>
-                  <th>Weekly Target Quota</th>
-                  <th>Required Facility Room</th>
-                  <th>Color Tag</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSubjects.map((subj) => (
-                  <tr key={subj.id}>
-                    <td>
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          padding: '0.25rem 0.6rem',
-                          borderRadius: '6px',
-                          background: '#eff6ff',
-                          color: '#2563eb',
-                          fontWeight: 800,
-                          fontSize: '0.82rem',
-                          fontFamily: 'monospace'
-                        }}
-                      >
-                        {subj.code}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{subj.name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        Standard Academic Curriculum
+          {/* Grouped Grade Level Cards for Courses */}
+          {(selectedCourseGrade === 'all' ? uniqueGrades : [selectedCourseGrade || uniqueGrades[0]]).map((grd) => {
+            const gradeSubjects = subjects.filter((s) => {
+              if (!s.grade) return true; // Show general courses or matched grade courses
+              const gStr = String(s.grade).replace('Grade ', '').trim();
+              return gStr === String(grd) || (Array.isArray(s.grades) && s.grades.includes(String(grd)));
+            });
+            const totalQuota = gradeSubjects.reduce((sum, s) => sum + (Number(s.weeklyPeriods) || 0), 0);
+
+            return (
+              <div key={grd} className="glass-card" style={{ padding: '1.5rem' }}>
+                {/* Grade Course Card Header */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingBottom: '1rem',
+                    marginBottom: '1.25rem',
+                    borderBottom: '1px solid var(--border-color)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                    <div
+                      style={{
+                        padding: '0.45rem 1.1rem',
+                        borderRadius: 'var(--radius-md)',
+                        background: '#7c3aed',
+                        color: '#ffffff',
+                        fontWeight: 800,
+                        fontSize: '1.05rem'
+                      }}
+                    >
+                      Grade {grd}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                        Grade Level {grd} Master Course Curriculum
                       </div>
-                    </td>
-                    <td>
-                      <span
-                        style={{
-                          fontWeight: 800,
-                          color: subj.weeklyPeriods >= 8 ? '#4f46e5' : '#0f172a',
-                          fontSize: '0.9rem'
-                        }}
-                      >
-                        {subj.weeklyPeriods} Periods / Week
-                      </span>
-                    </td>
-                    <td>{getVenueBadge(subj.requiredVenueType)}</td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <span
-                          style={{
-                            width: '14px',
-                            height: '14px',
-                            borderRadius: '50%',
-                            background: subj.color || '#2563eb',
-                            display: 'inline-block',
-                            border: '1px solid #cbd5e1'
-                          }}
-                        />
-                        <span style={{ fontSize: '0.78rem', fontFamily: 'monospace', color: '#64748b' }}>
-                          {subj.color || '#2563eb'}
-                        </span>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        {gradeSubjects.length} Master Course{gradeSubjects.length !== 1 ? 's' : ''} Configured · {totalQuota} Total Weekly Hours
                       </div>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem' }}
-                          onClick={() => openCourseModal(subj)}
-                        >
-                          <Edit2 size={13} /> Edit
-                        </button>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: '#ef4444' }}
-                          onClick={() => setDeleteTarget({ type: 'subject', data: subj })}
-                        >
-                          <Trash2 size={13} /> Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </div>
+
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem' }}
+                    onClick={() => openCourseModal(grd)}
+                  >
+                    <Plus size={14} /> Add Course to Grade {grd}
+                  </button>
+                </div>
+
+                {/* Grade Course Table / Empty State */}
+                {gradeSubjects.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '1.25rem',
+                      borderRadius: 'var(--radius-md)',
+                      background: '#f8fafc',
+                      border: '1.5px dashed #cbd5e1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '1rem',
+                      flexWrap: 'wrap'
+                    }}
+                  >
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-sub)', fontWeight: 500 }}>
+                      No master courses configured for <strong>Grade {grd}</strong> yet. Click the button to add courses.
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                      onClick={() => openCourseModal(grd)}
+                    >
+                      <Plus size={14} /> Add Course to Grade {grd}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="table-custom">
+                      <thead>
+                        <tr>
+                          <th>Course Code</th>
+                          <th>Subject / Course Name</th>
+                          <th>Total Weekly Hours</th>
+                          <th>Required Facility Room</th>
+                          <th>Color Tag</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {gradeSubjects.map((subj) => (
+                          <tr key={subj.id}>
+                            <td>
+                              <span
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '0.25rem 0.6rem',
+                                  borderRadius: '6px',
+                                  background: '#eff6ff',
+                                  color: '#2563eb',
+                                  fontWeight: 800,
+                                  fontSize: '0.82rem',
+                                  fontFamily: 'monospace'
+                                }}
+                              >
+                                {subj.code}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{subj.name}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                Grade {grd} Standard Curriculum
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                <span style={{ fontWeight: 800, color: '#4f46e5', fontSize: '0.88rem', fontFamily: 'monospace' }}>
+                                  {formatToHHMM(subj.weeklyDuration || subj.weeklyPeriods)} Hrs
+                                </span>
+                                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                  {subj.weeklyPeriods || 6} Periods / Week
+                                </span>
+                              </div>
+                            </td>
+                            <td>{getVenueBadge(subj.requiredVenueType)}</td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <span
+                                  style={{
+                                    width: '14px',
+                                    height: '14px',
+                                    borderRadius: '50%',
+                                    background: subj.color || '#2563eb',
+                                    display: 'inline-block',
+                                    border: '1px solid #cbd5e1'
+                                  }}
+                                />
+                                <span style={{ fontSize: '0.78rem', fontFamily: 'monospace', color: '#64748b' }}>
+                                  {subj.color || '#2563eb'}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem' }}
+                                  onClick={() => openCourseModal(grd, subj)}
+                                >
+                                  <Edit2 size={13} /> Edit
+                                </button>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: '#ef4444' }}
+                                  onClick={() => setDeleteTarget({ type: 'subject', data: subj })}
+                                >
+                                  <Trash2 size={13} /> Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -951,7 +1177,7 @@ export default function PrimaryDataEntry() {
           </div>
 
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
-            Creating Grade <strong>{newGradeLevel}</strong> will automatically initialize Section A (Grade {newGradeLevel}-A) with default student capacity and classroom room assignment.
+            Creating Grade <strong>{newGradeLevel || '...'}</strong> will automatically initialize Section A (Grade {newGradeLevel || '...'}-A) with default student capacity and classroom room assignment.
           </div>
 
           <div className="modal-footer" style={{ padding: 0, background: 'transparent' }}>
@@ -969,7 +1195,7 @@ export default function PrimaryDataEntry() {
       <Modal
         isOpen={isSectionModalOpen}
         onClose={() => setIsSectionModalOpen(false)}
-        title={editingSection ? `Edit Section ${editingSection.name}` : `Add Section to Grade ${sectionForm.grade}`}
+        title={editingSection ? `Edit Section ${editingSection.name}` : `Add Section to ${sectionForm.grade.startsWith('Grade') ? sectionForm.grade : `Grade ${sectionForm.grade}`}`}
       >
         <form onSubmit={handleSectionSubmit}>
           <div className="form-group">
@@ -1037,6 +1263,22 @@ export default function PrimaryDataEntry() {
       >
         <form onSubmit={handleCourseSubmit}>
           <div className="form-group">
+            <label>Target Grade Level</label>
+            <select
+              className="form-control"
+              value={courseForm.grade || ''}
+              onChange={(e) => setCourseForm({ ...courseForm, grade: e.target.value })}
+              required
+            >
+              {uniqueGrades.map((g) => (
+                <option key={g} value={g}>
+                  Grade {g}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
             <label>Course Code</label>
             <input
               type="text"
@@ -1060,17 +1302,38 @@ export default function PrimaryDataEntry() {
             />
           </div>
 
-          <div className="form-group">
-            <label>Target Weekly Periods Allocation (e.g. 8 for Maths)</label>
-            <input
-              type="number"
-              className="form-control"
-              min="1"
-              max="15"
-              value={courseForm.weeklyPeriods}
-              onChange={(e) => setCourseForm({ ...courseForm, weeklyPeriods: e.target.value })}
-              required
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-group">
+              <label>Weekly Duration (HH:MM)</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="06:00"
+                value={courseForm.weeklyDuration}
+                onChange={(e) => setCourseForm({ ...courseForm, weeklyDuration: e.target.value })}
+                required
+              />
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                Format: <strong>HH:MM</strong> (e.g. 06:00)
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Periods / Week</label>
+              <input
+                type="number"
+                className="form-control"
+                min="1"
+                max="40"
+                placeholder="e.g. 6"
+                value={courseForm.weeklyPeriods}
+                onChange={(e) => setCourseForm({ ...courseForm, weeklyPeriods: e.target.value })}
+                required
+              />
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                Weekly Period Count
+              </div>
+            </div>
           </div>
 
           <div className="form-group">
@@ -1080,9 +1343,9 @@ export default function PrimaryDataEntry() {
               value={courseForm.requiredVenueType}
               onChange={(e) => setCourseForm({ ...courseForm, requiredVenueType: e.target.value })}
             >
-              {venueTypes.map((vt) => (
+              {(venueTypes || []).filter((vt) => vt.id !== 'ALL').map((vt) => (
                 <option key={vt.id} value={vt.id}>
-                  {vt.name}
+                  {vt.label || vt.name || vt.id}
                 </option>
               ))}
             </select>
@@ -1218,18 +1481,9 @@ export default function PrimaryDataEntry() {
       <ConfirmModal
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        onConfirm={() => {
-          if (!deleteTarget) return;
-          if (deleteTarget.type === 'class') {
-            deleteClass(deleteTarget.data.id);
-          } else if (deleteTarget.type === 'subject') {
-            deleteSubject(deleteTarget.data.id);
-          } else if (deleteTarget.type === 'eca') {
-            deleteEcaVertical(deleteTarget.data);
-          }
-        }}
-        title={`Delete ${deleteTarget?.type === 'class' ? 'Class Section' : deleteTarget?.type === 'subject' ? 'Subject' : 'ECA Vertical'}`}
-        message={`Are you sure you want to delete ${deleteTarget?.type === 'class' ? `class section "${deleteTarget?.data?.name}"` : deleteTarget?.type === 'subject' ? `subject "${deleteTarget?.data?.name}" (${deleteTarget?.data?.code})` : `ECA vertical "${deleteTarget?.data}"`}? This action cannot be undone.`}
+        onConfirm={handleConfirmDelete}
+        title={`Delete ${deleteTarget?.type === 'grade' ? 'Grade Level' : deleteTarget?.type === 'class' ? 'Class Section' : deleteTarget?.type === 'subject' ? 'Subject' : 'ECA Vertical'}`}
+        message={`Are you sure you want to delete ${deleteTarget?.type === 'grade' ? `Grade ${deleteTarget?.data?.id || deleteTarget?.data} and all its associated class sections` : deleteTarget?.type === 'class' ? `class section "${deleteTarget?.data?.name}"` : deleteTarget?.type === 'subject' ? `subject "${deleteTarget?.data?.name}" (${deleteTarget?.data?.code})` : `ECA vertical "${deleteTarget?.data?.name || deleteTarget?.data}"`}? This action cannot be undone.`}
         confirmText="Delete"
       />
     </div>

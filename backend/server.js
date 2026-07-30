@@ -9,6 +9,7 @@ import classRoutes from './routes/classRoutes.js';
 import courseRoutes from './routes/courseRoutes.js';
 import venueRoutes from './routes/venueRoutes.js';
 import facultyRoutes from './routes/facultyRoutes.js';
+import gradeRoutes from './routes/gradeRoutes.js';
 import ecaRoutes from './routes/ecaRoutes.js';
 import timetableRoutes from './routes/timetableRoutes.js';
 
@@ -49,6 +50,7 @@ app.use('/api/classes', classRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/faculties', facultyRoutes);
+app.use('/api/grades', gradeRoutes);
 app.use('/api/eca', ecaRoutes);
 app.use('/api/timetables', timetableRoutes);
 

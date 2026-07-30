@@ -1,14 +1,14 @@
-import { Class, Grade, Subject, ClassSubject } from '../models/index.js';
+import { Class, Grade, Subject } from '../models/index.js';
+import { Op } from 'sequelize';
 
 // ============================================================
-// 1. GET ALL CLASSES (WITH GRADE & SUBJECT RELATIONS)
+// 1. GET ALL CLASSES (WITH GRADE RELATIONS)
 // ============================================================
 export const getClasses = async (req, res) => {
   try {
     const classes = await Class.findAll({
       include: [
-        { model: Grade, as: 'grade', attributes: ['id', 'name', 'level'] },
-        { model: Subject, as: 'subjects', through: { attributes: ['weeklyPeriods'] } }
+        { model: Grade, as: 'grade', attributes: ['id', 'name', 'level'] }
       ],
       order: [['gradeName', 'ASC'], ['section', 'ASC']]
     });
@@ -32,7 +32,7 @@ export const getClasses = async (req, res) => {
 // ============================================================
 export const createClass = async (req, res) => {
   try {
-    const { name, gradeName, section, studentCount, homeVenueId, subjectIds } = req.body;
+    const { name, grade, gradeName, section, studentCount, homeVenueId } = req.body;
 
     if (!name || !section) {
       return res.status(400).json({
@@ -41,13 +41,35 @@ export const createClass = async (req, res) => {
       });
     }
 
-    const gName = gradeName || name.replace(/[^0-9]/g, '') || '10';
+    const rawGrade = grade || gradeName || name.replace(/[^0-9]/g, '') || '10';
+    const gNum = parseInt(String(rawGrade).replace(/\D/g, ''), 10);
+    const gName = isNaN(gNum) ? rawGrade : String(gNum);
+    const fullGradeName = `Grade ${gName}`;
     const classId = req.body.id || `c_${Date.now()}`;
 
-    // Find or create matching Grade
-    let gradeObj = await Grade.findOne({ where: { name: `Grade ${gName}` } });
+    // Find or create matching Grade record in MySQL 'grades' table
+    let gradeObj = await Grade.findOne({
+      where: {
+        [Op.or]: [
+          { name: fullGradeName },
+          { id: isNaN(gNum) ? -1 : gNum }
+        ]
+      }
+    });
+
     if (!gradeObj) {
-      gradeObj = await Grade.create({ name: `Grade ${gName}`, level: 'High School' });
+      let gLevel = 'High School';
+      if (!isNaN(gNum)) {
+        if (gNum >= 11) gLevel = 'Higher Secondary';
+        else if (gNum >= 9) gLevel = 'High School';
+        else if (gNum >= 6) gLevel = 'Middle School';
+        else gLevel = 'Primary School';
+      }
+      gradeObj = await Grade.create({
+        id: isNaN(gNum) ? undefined : gNum,
+        name: fullGradeName,
+        level: gLevel
+      });
     }
 
     const newClass = await Class.create({
@@ -60,19 +82,9 @@ export const createClass = async (req, res) => {
       homeVenueId: homeVenueId || null
     });
 
-    // Associate Subjects if provided
-    if (Array.isArray(subjectIds) && subjectIds.length > 0) {
-      for (const sId of subjectIds) {
-        await ClassSubject.findOrCreate({
-          where: { classId: newClass.id, subjectId: sId }
-        });
-      }
-    }
-
     const createdClass = await Class.findByPk(newClass.id, {
       include: [
-        { model: Grade, as: 'grade' },
-        { model: Subject, as: 'subjects' }
+        { model: Grade, as: 'grade' }
       ]
     });
 
@@ -143,7 +155,6 @@ export const deleteClass = async (req, res) => {
       });
     }
 
-    await ClassSubject.destroy({ where: { classId: id } });
     await classRecord.destroy();
 
     return res.status(200).json({

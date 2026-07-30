@@ -54,7 +54,7 @@ export default function FacultyManagement() {
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
       {/* Top Filter & Actions Bar */}
       <div className="section-header">
         <div className="filter-bar">

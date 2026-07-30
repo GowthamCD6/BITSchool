@@ -1,4 +1,4 @@
-import { Subject, Class } from '../models/index.js';
+import { Subject, Grade, GradeSubject, Class } from '../models/index.js';
 
 // ============================================================
 // 1. GET ALL SUBJECTS / COURSES
@@ -30,7 +30,7 @@ export const getSubjects = getCourses;
 // ============================================================
 export const createCourse = async (req, res) => {
   try {
-    const { code, name, grade, grades, weeklyPeriods, requiredVenueType, color } = req.body;
+    const { code, name, grade, weeklyPeriods, weeklyDuration, requiredVenueType, color } = req.body;
 
     if (!code || !name) {
       return res.status(400).json({
@@ -40,17 +40,38 @@ export const createCourse = async (req, res) => {
     }
 
     const subjectId = req.body.id || `s_${Date.now()}`;
+    const rawGrade = grade ? String(grade).replace('Grade ', '').trim() : '10';
+    const gNum = parseInt(rawGrade, 10);
+
+    // Find or create matching Grade in MySQL grades table
+    let gradeObj = null;
+    if (!isNaN(gNum)) {
+      let gLevel = gNum >= 11 ? 'Higher Secondary' : gNum >= 9 ? 'High School' : gNum >= 6 ? 'Middle School' : 'Primary School';
+      const [gRecord] = await Grade.findOrCreate({
+        where: { name: `Grade ${gNum}` },
+        defaults: { id: gNum, name: `Grade ${gNum}`, level: gLevel }
+      });
+      gradeObj = gRecord;
+    }
 
     const newSubject = await Subject.create({
       id: subjectId,
       code: code.trim().toUpperCase(),
       name: name.trim(),
-      grade: grade || 'all',
-      grades: Array.isArray(grades) ? grades : (grade && grade !== 'all' ? [String(grade)] : ['8', '9', '10', '11']),
-      weeklyPeriods: Number(weeklyPeriods) || 5,
+      gradeId: gradeObj ? gradeObj.id : null,
+      grade: rawGrade,
+      weeklyPeriods: Number(weeklyPeriods) || 6,
+      weeklyDuration: weeklyDuration || '06:00',
       requiredVenueType: requiredVenueType || 'normal',
       color: color || '#2563eb'
     });
+
+    // Populate grade_subjects junction table with foreign keys
+    if (gradeObj) {
+      await GradeSubject.findOrCreate({
+        where: { gradeId: gradeObj.id, subjectId: newSubject.id }
+      });
+    }
 
     return res.status(201).json({
       success: true,
@@ -74,7 +95,7 @@ export const createSubject = createCourse;
 export const updateCourse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { code, name, grade, grades, weeklyPeriods, requiredVenueType, color } = req.body;
+    const { code, name, grade, weeklyPeriods, weeklyDuration, requiredVenueType, color } = req.body;
 
     const subject = await Subject.findByPk(id);
     if (!subject) {
@@ -84,15 +105,34 @@ export const updateCourse = async (req, res) => {
       });
     }
 
+    const rawGrade = grade !== undefined ? String(grade).replace('Grade ', '').trim() : subject.grade;
+    const gNum = parseInt(rawGrade, 10);
+    let gradeObj = null;
+    if (!isNaN(gNum)) {
+      let gLevel = gNum >= 11 ? 'Higher Secondary' : gNum >= 9 ? 'High School' : gNum >= 6 ? 'Middle School' : 'Primary School';
+      const [gRecord] = await Grade.findOrCreate({
+        where: { name: `Grade ${gNum}` },
+        defaults: { id: gNum, name: `Grade ${gNum}`, level: gLevel }
+      });
+      gradeObj = gRecord;
+    }
+
     await subject.update({
       code: code ? code.trim().toUpperCase() : subject.code,
       name: name ? name.trim() : subject.name,
-      grade: grade !== undefined ? grade : subject.grade,
-      grades: grades !== undefined ? grades : subject.grades,
+      gradeId: gradeObj ? gradeObj.id : subject.gradeId,
+      grade: rawGrade,
       weeklyPeriods: weeklyPeriods !== undefined ? Number(weeklyPeriods) : subject.weeklyPeriods,
+      weeklyDuration: weeklyDuration !== undefined ? weeklyDuration : subject.weeklyDuration,
       requiredVenueType: requiredVenueType || subject.requiredVenueType,
       color: color || subject.color
     });
+
+    if (gradeObj) {
+      await GradeSubject.findOrCreate({
+        where: { gradeId: gradeObj.id, subjectId: subject.id }
+      });
+    }
 
     return res.status(200).json({
       success: true,

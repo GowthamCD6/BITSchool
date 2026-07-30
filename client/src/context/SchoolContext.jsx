@@ -2,20 +2,16 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import {
   DAYS,
   PERIODS,
-  VENUE_TYPES,
-  INITIAL_CLASSES,
-  INITIAL_SUBJECTS,
-  INITIAL_VENUES,
-  INITIAL_FACULTIES,
-  INITIAL_ECA_VERTICALS,
-  INITIAL_ECA_SCHEDULE,
-  INITIAL_ECA_TOTALS
-} from '../utils/initialData';
+  VENUE_TYPES
+} from '../utils/constants';
 import { generateAutoTimetable } from '../utils/timetableGenerator';
 
 const SchoolContext = createContext();
 
 // ── Helper: get Monday of the week for a given date ──
+
+
+
 function getMondayOfWeek(date) {
   const d = new Date(date);
   const dayOfWeek = d.getDay(); // 0=Sun, 1=Mon, ...
@@ -25,7 +21,6 @@ function getMondayOfWeek(date) {
   return d;
 }
 
-// ── Helper: format date to YYYY-MM-DD key string ──
 function toWeekKey(date) {
   const d = new Date(date);
   const y = d.getFullYear();
@@ -60,24 +55,31 @@ export function SchoolProvider({ children }) {
     localStorage.setItem('bitschool_active_tab', tab);
     setActiveTabState(tab);
   };
+
+  // Live Database Entity States (Initialized empty or from database cache)
   const [faculties, setFaculties] = useState(() => {
     const saved = localStorage.getItem('bitschool_faculties');
-    return saved ? JSON.parse(saved) : INITIAL_FACULTIES;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [venues, setVenues] = useState(() => {
     const saved = localStorage.getItem('bitschool_venues');
-    return saved ? JSON.parse(saved) : INITIAL_VENUES;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [classes, setClasses] = useState(() => {
     const saved = localStorage.getItem('bitschool_classes');
-    return saved ? JSON.parse(saved) : INITIAL_CLASSES;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [subjects, setSubjects] = useState(() => {
     const saved = localStorage.getItem('bitschool_subjects');
-    return saved ? JSON.parse(saved) : INITIAL_SUBJECTS;
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [grades, setGrades] = useState(() => {
+    const saved = localStorage.getItem('bitschool_grades');
+    return saved ? JSON.parse(saved) : [];
   });
 
   // ── ECA (Extra Curricular Activities / Non Academics) State ──
@@ -128,35 +130,46 @@ export function SchoolProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
 
-  // Fetch Classes, Subjects, Venues, and Faculties from MySQL Backend API on mount
+  // Fetch Classes, Subjects, Venues, Faculties, and Grades from MySQL Backend API on mount
   useEffect(() => {
     const fetchDatabaseData = async () => {
       try {
-        const [classesRes, subjectsRes, venuesRes, facultiesRes] = await Promise.all([
+        const [classesRes, subjectsRes, venuesRes, facultiesRes, gradesRes] = await Promise.all([
           fetch('http://localhost:5000/api/classes'),
           fetch('http://localhost:5000/api/courses'),
           fetch('http://localhost:5000/api/venues'),
-          fetch('http://localhost:5000/api/faculties')
+          fetch('http://localhost:5000/api/faculties'),
+          fetch('http://localhost:5000/api/grades')
         ]);
 
         if (classesRes.ok) {
           const data = await classesRes.json();
-          if (data.success && Array.isArray(data.data) && data.data.length > 0) setClasses(data.data);
+          const items = Array.isArray(data) ? data : (data.data || []);
+          setClasses(items);
         }
 
         if (subjectsRes.ok) {
           const data = await subjectsRes.json();
-          if (data.success && Array.isArray(data.data) && data.data.length > 0) setSubjects(data.data);
+          const items = Array.isArray(data) ? data : (data.data || []);
+          setSubjects(items);
         }
 
         if (venuesRes.ok) {
           const data = await venuesRes.json();
-          if (data.success && Array.isArray(data.data) && data.data.length > 0) setVenues(data.data);
+          const items = Array.isArray(data) ? data : (data.data || []);
+          setVenues(items);
         }
 
         if (facultiesRes.ok) {
           const data = await facultiesRes.json();
-          if (data.success && Array.isArray(data.data) && data.data.length > 0) setFaculties(data.data);
+          const items = Array.isArray(data) ? data : (data.data || []);
+          setFaculties(items);
+        }
+
+        if (gradesRes && gradesRes.ok) {
+          const data = await gradesRes.json();
+          const items = Array.isArray(data) ? data : (data.data || []);
+          setGrades(items);
         }
       } catch (err) {
         console.warn('Backend API connection notice (using database cache):', err.message);
@@ -182,6 +195,10 @@ export function SchoolProvider({ children }) {
   useEffect(() => {
     localStorage.setItem('bitschool_subjects', JSON.stringify(subjects));
   }, [subjects]);
+
+  useEffect(() => {
+    localStorage.setItem('bitschool_grades', JSON.stringify(grades));
+  }, [grades]);
 
   useEffect(() => {
     localStorage.setItem('bitschool_weekly_timetables', JSON.stringify(weeklyTimetables));
@@ -487,6 +504,53 @@ export function SchoolProvider({ children }) {
     }
   };
 
+  // Grade Level CRUD Operations (MySQL Persistence)
+  const addGrade = async (gradeData) => {
+    try {
+      const res = await fetch('http://localhost:5000/api/grades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gradeData)
+      });
+      if (res.ok) {
+        const newGrade = await res.json();
+        setGrades((prev) => [...prev.filter((g) => String(g.id) !== String(newGrade.id)), newGrade]);
+        showToast(`Grade level "${newGrade.name}" saved to MySQL database.`);
+        return newGrade;
+      }
+    } catch (err) {
+      showToast('Failed to save grade level to database.', 'danger');
+    }
+  };
+
+  const updateGrade = async (id, gradeData) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/grades/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gradeData)
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setGrades((prev) => prev.map((g) => (String(g.id) === String(id) ? updated : g)));
+        showToast(`Grade level updated in database.`);
+      }
+    } catch (err) {
+      showToast('Failed to update grade in database.', 'danger');
+    }
+  };
+
+  const deleteGrade = async (id) => {
+    try {
+      const target = grades.find((g) => String(g.id) === String(id));
+      await fetch(`http://localhost:5000/api/grades/${id}`, { method: 'DELETE' });
+      setGrades((prev) => prev.filter((g) => String(g.id) !== String(id)));
+      showToast(`Grade level "${target?.name || ''}" removed from database.`, 'warning');
+    } catch (err) {
+      showToast('Failed to delete grade from database.', 'danger');
+    }
+  };
+
   // Update a single Timetable cell slot (within active week)
   const updateTimetableSlot = (slotId, newDetails) => {
     setWeeklyTimetables(prev => {
@@ -542,6 +606,7 @@ export function SchoolProvider({ children }) {
         venues,
         classes,
         subjects,
+        grades,
         timetable,
         timetableStats,
         days: DAYS,
@@ -577,6 +642,9 @@ export function SchoolProvider({ children }) {
         addSubject,
         updateSubject,
         deleteSubject,
+        addGrade,
+        updateGrade,
+        deleteGrade,
         updateTimetableSlot
       }}
     >
