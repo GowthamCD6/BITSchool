@@ -85,12 +85,33 @@ export function SchoolProvider({ children }) {
   // ── ECA (Extra Curricular Activities / Non Academics) State ──
   const [ecaVerticals, setEcaVerticals] = useState(() => {
     const saved = localStorage.getItem('bitschool_eca_verticals');
-    return saved ? JSON.parse(saved) : INITIAL_ECA_VERTICALS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [ecaSchedule, setEcaSchedule] = useState(() => {
     const saved = localStorage.getItem('bitschool_eca_schedule');
-    return saved ? JSON.parse(saved) : INITIAL_ECA_SCHEDULE;
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  // ECA vertical details with grade mappings
+  const [ecaVerticalDetails, setEcaVerticalDetails] = useState([]);
+
+  // ── Bell Schedule Time Slots State ──
+  const [timeSlots, setTimeSlots] = useState(() => {
+    const saved = localStorage.getItem('bitschool_time_slots');
+    return saved ? JSON.parse(saved) : PERIODS;
+  });
+
+  // ── Master Bell Schedule Timing Parameters ──
+  const [bellConfig, setBellConfig] = useState({
+    schoolStartTime: '08:30 AM',
+    morningBreakStart: '10:00 AM',
+    morningBreakEnd: '10:15 AM',
+    lunchBreakStart: '11:45 AM',
+    lunchBreakEnd: '12:30 PM',
+    afternoonBreakStart: '02:00 PM',
+    afternoonBreakEnd: '02:15 PM',
+    schoolEndTime: '03:45 PM'
   });
 
   // ── Active Week Key (Monday date string e.g. '2026-07-27') ──
@@ -130,16 +151,19 @@ export function SchoolProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
 
-  // Fetch Classes, Subjects, Venues, Faculties, and Grades from MySQL Backend API on mount
+  // Fetch ALL data from MySQL Backend API on mount (Classes, Subjects, Venues, Faculties, Grades, ECA)
   useEffect(() => {
     const fetchDatabaseData = async () => {
       try {
-        const [classesRes, subjectsRes, venuesRes, facultiesRes, gradesRes] = await Promise.all([
+        const [classesRes, subjectsRes, venuesRes, facultiesRes, gradesRes, ecaRes, timeSlotsRes, bellConfigRes] = await Promise.all([
           fetch('http://localhost:5000/api/classes'),
           fetch('http://localhost:5000/api/courses'),
           fetch('http://localhost:5000/api/venues'),
           fetch('http://localhost:5000/api/faculties'),
-          fetch('http://localhost:5000/api/grades')
+          fetch('http://localhost:5000/api/grades'),
+          fetch('http://localhost:5000/api/eca'),
+          fetch('http://localhost:5000/api/time-slots'),
+          fetch('http://localhost:5000/api/time-slots/bell-config')
         ]);
 
         if (classesRes.ok) {
@@ -171,6 +195,35 @@ export function SchoolProvider({ children }) {
           const items = Array.isArray(data) ? data : (data.data || []);
           setGrades(items);
         }
+
+        if (ecaRes && ecaRes.ok) {
+          const ecaData = await ecaRes.json();
+          const ecaPayload = ecaData.data || ecaData;
+          if (ecaPayload.verticals && Array.isArray(ecaPayload.verticals)) {
+            setEcaVerticals(ecaPayload.verticals);
+          }
+          if (ecaPayload.verticalDetails && Array.isArray(ecaPayload.verticalDetails)) {
+            setEcaVerticalDetails(ecaPayload.verticalDetails);
+          }
+          if (ecaPayload.schedule && typeof ecaPayload.schedule === 'object') {
+            setEcaSchedule(ecaPayload.schedule);
+          }
+        }
+
+        if (timeSlotsRes && timeSlotsRes.ok) {
+          const data = await timeSlotsRes.json();
+          const items = Array.isArray(data) ? data : (data.data || []);
+          if (items.length > 0) {
+            setTimeSlots(items.sort((a, b) => a.slotNo - b.slotNo));
+          }
+        }
+
+        if (bellConfigRes && bellConfigRes.ok) {
+          const data = await bellConfigRes.json();
+          if (data.data) {
+            setBellConfig(data.data);
+          }
+        }
       } catch (err) {
         console.warn('Backend API connection notice (using database cache):', err.message);
       }
@@ -199,6 +252,10 @@ export function SchoolProvider({ children }) {
   useEffect(() => {
     localStorage.setItem('bitschool_grades', JSON.stringify(grades));
   }, [grades]);
+
+  useEffect(() => {
+    localStorage.setItem('bitschool_time_slots', JSON.stringify(timeSlots));
+  }, [timeSlots]);
 
   useEffect(() => {
     localStorage.setItem('bitschool_weekly_timetables', JSON.stringify(weeklyTimetables));
@@ -234,19 +291,29 @@ export function SchoolProvider({ children }) {
     localStorage.setItem('bitschool_eca_schedule', JSON.stringify(ecaSchedule));
   }, [ecaSchedule]);
 
-  // ── ECA Handlers ──
-  const updateEcaCell = (day, vertical, newCellData) => {
+  // ── ECA Handlers (persisted to MySQL via API) ──
+  const updateEcaCell = async (day, vertical, newCellData, grade = '4') => {
+    const key = `${grade}_${day}`;
     setEcaSchedule(prev => ({
       ...prev,
-      [day]: {
-        ...prev[day],
+      [key]: {
+        ...prev[key],
         [vertical]: newCellData
       }
     }));
-    showToast(`Updated ECA activity for ${vertical} on ${day}.`);
+    try {
+      await fetch('http://localhost:5000/api/eca/cell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ day, vertical, grade, ...newCellData })
+      });
+    } catch (err) {
+      console.warn('Failed to persist ECA cell to backend:', err.message);
+    }
+    showToast(`Updated Grade ${grade} ECA activity for ${vertical} on ${day}.`);
   };
 
-  const addEcaVertical = (verticalName) => {
+  const addEcaVertical = async (verticalName, gradeIds = []) => {
     if (ecaVerticals.includes(verticalName)) {
       showToast(`Vertical "${verticalName}" already exists.`, 'warning');
       return;
@@ -259,10 +326,25 @@ export function SchoolProvider({ children }) {
       });
       return next;
     });
+    try {
+      const res = await fetch('http://localhost:5000/api/eca/vertical', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: verticalName, gradeIds })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.data) {
+          setEcaVerticalDetails(prev => [...prev, data.data]);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to persist ECA vertical to backend:', err.message);
+    }
     showToast(`Added new ECA Vertical: "${verticalName}".`);
   };
 
-  const deleteEcaVertical = (verticalName) => {
+  const deleteEcaVertical = async (verticalName) => {
     setEcaVerticals(prev => prev.filter(v => v !== verticalName));
     setEcaSchedule(prev => {
       const next = { ...prev };
@@ -273,6 +355,13 @@ export function SchoolProvider({ children }) {
       });
       return next;
     });
+    try {
+      await fetch(`http://localhost:5000/api/eca/vertical/${encodeURIComponent(verticalName)}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {
+      console.warn('Failed to delete ECA vertical from backend:', err.message);
+    }
     showToast(`Removed ECA Vertical "${verticalName}".`, 'warning');
   };
 
@@ -283,7 +372,7 @@ export function SchoolProvider({ children }) {
     }, 3500);
   };
 
-  // Auto Generate Timetable — saves under the active week key
+  // Auto Generate Master Timetable
   const handleAutoGenerateTimetable = (options = {}) => {
     const existingWeekSlots = weeklyTimetables[activeWeekKey] || [];
     const result = generateAutoTimetable({
@@ -291,6 +380,8 @@ export function SchoolProvider({ children }) {
       venues,
       classes,
       subjects,
+      ecaSchedule,
+      bellConfig,
       targetClassId: options.targetClassId || 'all',
       targetGrade: options.targetGrade || 'all',
       existingTimetable: existingWeekSlots
@@ -300,7 +391,7 @@ export function SchoolProvider({ children }) {
       [activeWeekKey]: result.timetable
     }));
     setTimetableStats(result.stats);
-    showToast(`Timetable Auto-Scheduled for week ${activeWeekKey}! ${result.stats.allocatedSlots} slots allocated (${result.stats.utilizationRate}% Efficiency).`, 'success');
+    showToast(`Master Timetable Auto-Scheduled Successfully! ${result.stats.allocatedSlots} slots allocated (${result.stats.utilizationRate}% Efficiency).`, 'success');
   };
 
   // ── Delete a week's timetable ──
@@ -551,6 +642,72 @@ export function SchoolProvider({ children }) {
     }
   };
 
+  // ── Time Slot CRUD (MySQL API) ──
+  const addTimeSlot = async (newSlot) => {
+    try {
+      const res = await fetch('http://localhost:5000/api/time-slots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSlot)
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setTimeSlots(prev => [...prev, data.data].sort((a, b) => a.slotNo - b.slotNo));
+        showToast(`Time slot "${data.data.name}" added successfully.`);
+      }
+    } catch (err) {
+      showToast('Failed to save time slot to database.', 'danger');
+    }
+  };
+
+  const updateTimeSlot = async (updatedSlot) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/time-slots/${updatedSlot.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedSlot)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTimeSlots(prev => prev.map(s => String(s.id) === String(updatedSlot.id) ? { ...s, ...updatedSlot } : s).sort((a, b) => a.slotNo - b.slotNo));
+        showToast(`Time slot "${updatedSlot.name}" updated.`);
+      }
+    } catch (err) {
+      showToast('Failed to update time slot.', 'danger');
+    }
+  };
+
+  const deleteTimeSlot = async (slotId) => {
+    try {
+      const target = timeSlots.find(s => String(s.id) === String(slotId));
+      await fetch(`http://localhost:5000/api/time-slots/${slotId}`, { method: 'DELETE' });
+      setTimeSlots(prev => prev.filter(s => String(s.id) !== String(slotId)));
+      showToast(`Time slot "${target?.name || ''}" deleted.`, 'warning');
+    } catch (err) {
+      showToast('Failed to delete time slot.', 'danger');
+    }
+  };
+
+  const saveBellConfig = async (newConfig) => {
+    try {
+      const res = await fetch('http://localhost:5000/api/time-slots/bell-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig)
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setBellConfig(data.data);
+        if (data.timeSlots && Array.isArray(data.timeSlots)) {
+          setTimeSlots(data.timeSlots);
+        }
+        showToast('School Bell Schedule parameters saved & time slots generated.');
+      }
+    } catch (err) {
+      showToast('Failed to save bell schedule parameters.', 'danger');
+    }
+  };
+
   // Update a single Timetable cell slot (within active week)
   const updateTimetableSlot = (slotId, newDetails) => {
     setWeeklyTimetables(prev => {
@@ -625,10 +782,18 @@ export function SchoolProvider({ children }) {
         toWeekKey,
         // ECA (Non Academics)
         ecaVerticals,
+        ecaVerticalDetails,
         ecaSchedule,
         updateEcaCell,
         addEcaVertical,
         deleteEcaVertical,
+        // Time Slots (Bell Schedule)
+        timeSlots,
+        addTimeSlot,
+        updateTimeSlot,
+        deleteTimeSlot,
+        bellConfig,
+        saveBellConfig,
         // CRUD
         addFaculty,
         updateFaculty,

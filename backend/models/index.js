@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/db.js';
+import { syncTimeSlotsFromBellConfig } from '../controllers/timeSlotController.js';
 import bcrypt from 'bcryptjs';
 
 // ============================================================
@@ -347,17 +348,45 @@ export const EcaSchedule = sequelize.define('EcaSchedule', {
     autoIncrement: true,
     primaryKey: true
   },
+  gradeId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'grades',
+      key: 'id'
+    }
+  },
+  grade: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    defaultValue: '4'
+  },
   day: {
     type: DataTypes.STRING(20),
     allowNull: false
   },
   verticalId: {
-    type: DataTypes.STRING(50),
+    type: DataTypes.STRING(150),
     allowNull: false
   },
   activity: {
     type: DataTypes.STRING(150),
     allowNull: true
+  },
+  duration: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    defaultValue: ''
+  },
+  target: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    defaultValue: 'All'
+  },
+  color: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    defaultValue: '#059669'
   },
   facultyInCharge: {
     type: DataTypes.STRING(100),
@@ -369,6 +398,120 @@ export const EcaSchedule = sequelize.define('EcaSchedule', {
   }
 }, {
   tableName: 'eca_schedules',
+  timestamps: true
+});
+
+// ============================================================
+// 11. GRADE-ECA VERTICAL MAP MODEL (grade_eca_verticals Table)
+// ============================================================
+export const GradeEcaVertical = sequelize.define('GradeEcaVertical', {
+  id: {
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
+    primaryKey: true
+  },
+  gradeId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: Grade,
+      key: 'id'
+    }
+  },
+  ecaVerticalId: {
+    type: DataTypes.STRING(50),
+    allowNull: false,
+    references: {
+      model: EcaVertical,
+      key: 'id'
+    }
+  }
+}, {
+  tableName: 'grade_eca_verticals',
+  timestamps: true
+});
+
+// ============================================================
+// 12. TIME SLOT MODEL (time_slots Table for Periods & Breaks)
+// ============================================================
+export const TimeSlot = sequelize.define('TimeSlot', {
+  id: {
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
+    primaryKey: true
+  },
+  slotNo: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  name: {
+    type: DataTypes.STRING(100),
+    allowNull: false
+  },
+  startTime: {
+    type: DataTypes.STRING(20),
+    allowNull: false
+  },
+  endTime: {
+    type: DataTypes.STRING(20),
+    allowNull: false
+  },
+  type: {
+    type: DataTypes.STRING(50),
+    defaultValue: 'period' // 'period' | 'break' | 'lunch' | 'assembly'
+  },
+  color: {
+    type: DataTypes.STRING(20),
+    defaultValue: '#2563eb'
+  }
+}, {
+  tableName: 'time_slots',
+  timestamps: true
+});
+
+// ============================================================
+// 13. BELL SCHEDULE CONFIG MODEL (Key timings: start, break, lunch, end)
+// ============================================================
+export const BellScheduleConfig = sequelize.define('BellScheduleConfig', {
+  id: {
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
+    primaryKey: true
+  },
+  schoolStartTime: {
+    type: DataTypes.STRING(20),
+    defaultValue: '08:30 AM'
+  },
+  morningBreakStart: {
+    type: DataTypes.STRING(20),
+    defaultValue: '10:00 AM'
+  },
+  morningBreakEnd: {
+    type: DataTypes.STRING(20),
+    defaultValue: '10:15 AM'
+  },
+  lunchBreakStart: {
+    type: DataTypes.STRING(20),
+    defaultValue: '11:45 AM'
+  },
+  lunchBreakEnd: {
+    type: DataTypes.STRING(20),
+    defaultValue: '12:30 PM'
+  },
+  afternoonBreakStart: {
+    type: DataTypes.STRING(20),
+    defaultValue: '02:00 PM'
+  },
+  afternoonBreakEnd: {
+    type: DataTypes.STRING(20),
+    defaultValue: '02:15 PM'
+  },
+  schoolEndTime: {
+    type: DataTypes.STRING(20),
+    defaultValue: '03:45 PM'
+  }
+}, {
+  tableName: 'bell_schedule_configs',
   timestamps: true
 });
 
@@ -384,6 +527,12 @@ Subject.belongsTo(Grade, { foreignKey: 'gradeId', as: 'gradeRecord' });
 
 Grade.belongsToMany(Subject, { through: GradeSubject, foreignKey: 'gradeId', as: 'gradeCourses' });
 Subject.belongsToMany(Grade, { through: GradeSubject, foreignKey: 'subjectId', as: 'grades' });
+
+Grade.hasMany(EcaSchedule, { foreignKey: 'gradeId', as: 'ecaSchedules', onDelete: 'CASCADE' });
+EcaSchedule.belongsTo(Grade, { foreignKey: 'gradeId', as: 'gradeRecord' });
+
+Grade.belongsToMany(EcaVertical, { through: GradeEcaVertical, foreignKey: 'gradeId', as: 'gradeEcaVerticals' });
+EcaVertical.belongsToMany(Grade, { through: GradeEcaVertical, foreignKey: 'ecaVerticalId', as: 'grades' });
 
 Faculty.belongsTo(Subject, { foreignKey: 'primarySubjectId', as: 'primarySubject' });
 
@@ -410,12 +559,41 @@ export async function syncDatabase() {
       console.log('[MySQL] weeklyDuration column status:', e.message);
     }
 
+    try {
+      await sequelize.query("ALTER TABLE eca_schedules ADD COLUMN grade VARCHAR(20) DEFAULT '4';");
+    } catch (e) {
+      // Column already exists
+    }
+
     await GradeSubject.sync();
     await Venue.sync();
     await Faculty.sync();
     await EcaVertical.sync();
-    await EcaSchedule.sync();
-    console.log('[MySQL] Synced all tables (Role, User, Grade, Class, Subject, GradeSubject, Venue, Faculty, EcaVertical, EcaSchedule) successfully.');
+    await EcaSchedule.sync({ alter: true });
+    await GradeEcaVertical.sync();
+    await TimeSlot.sync();
+    await BellScheduleConfig.sync();
+
+    // Seed / Sync bell config and auto-generate time_slots table with 12-hour AM/PM format
+    let bellConfig = await BellScheduleConfig.findOne();
+    if (!bellConfig) {
+      bellConfig = await BellScheduleConfig.create({
+        schoolStartTime: '08:30 AM',
+        morningBreakStart: '10:00 AM',
+        morningBreakEnd: '10:15 AM',
+        lunchBreakStart: '11:45 AM',
+        lunchBreakEnd: '12:30 PM',
+        afternoonBreakStart: '02:00 PM',
+        afternoonBreakEnd: '02:15 PM',
+        schoolEndTime: '03:45 PM'
+      });
+      console.log('[MySQL Seed] Initialized default Bell Schedule Timing Parameters.');
+    }
+
+    // Always auto-generate 12-hour AM/PM time_slots from bellConfig
+    await syncTimeSlotsFromBellConfig(bellConfig);
+
+    console.log('[MySQL] Synced all tables (Role, User, Grade, Class, Subject, GradeSubject, Venue, Faculty, EcaVertical, EcaSchedule, GradeEcaVertical, TimeSlot) successfully.');
 
     // 1. Seed Roles & Gowtham User
     let principalRole = await Role.findOne({ where: { name: 'Principal Administrator' } });

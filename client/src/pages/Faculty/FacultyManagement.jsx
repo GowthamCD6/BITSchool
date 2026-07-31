@@ -117,143 +117,143 @@ export default function FacultyManagement() {
 
             return (
               <div key={fac.id} className="glass-card faculty-card">
-              <div>
-                <div className="card-top">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                    <div
-                      className="faculty-avatar-lg"
-                      style={{ background: fac.avatarColor || 'var(--primary)' }}
-                    >
-                      {fac.name.split(' ').map((n) => n[0]).join('').substring(0, 2)}
-                    </div>
-                    <div>
-                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>{fac.name}</h3>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>
-                        {fac.empId}
+                <div>
+                  <div className="card-top">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                      <div
+                        className="faculty-avatar-lg"
+                        style={{ background: fac.avatarColor || 'var(--primary)' }}
+                      >
+                        {fac.name.split(' ').map((n) => n[0]).join('').substring(0, 2)}
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>{fac.name}</h3>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>
+                          {fac.empId}
+                        </div>
                       </div>
                     </div>
+
+                    <span className="badge badge-normal" style={{ fontSize: '0.7rem' }}>
+                      {fac.status}
+                    </span>
                   </div>
 
-                  <span className="badge badge-normal" style={{ fontSize: '0.7rem' }}>
-                    {fac.status}
-                  </span>
+                  {/* Covered Subjects */}
+                  <div
+                    style={{
+                      padding: '0.6rem 0.75rem',
+                      borderRadius: '8px',
+                      background: '#f8fafc',
+                      border: '1px solid var(--border-color)',
+                      marginBottom: '0.85rem'
+                    }}
+                  >
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem' }}>
+                      Subjects Covering ({coveredSubjects.length})
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      {coveredSubjects.length > 0 ? (
+                        coveredSubjects.map((subj) => (
+                          <span
+                            key={subj.id}
+                            style={{
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '6px',
+                              background: `${subj.color || '#2563eb'}18`,
+                              color: subj.color || '#2563eb',
+                              border: `1px solid ${subj.color || '#2563eb'}40`
+                            }}
+                          >
+                            {subj.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Unassigned</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Contact details */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-sub)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Mail size={14} color="var(--text-muted)" /> {fac.email}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Phone size={14} color="var(--text-muted)" /> {fac.phone}
+                    </div>
+                  </div>
+
+                  {/* Grades Undertaking */}
+                  <div style={{ marginTop: '0.9rem' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
+                      Grades Undertaking:
+                    </div>
+                    <div className="card-tags">
+                      {fac.grades && fac.grades.length > 0 ? (
+                        fac.grades.map((grd) => (
+                          <span key={grd} className="tag">
+                            {grd}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="tag">General</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Daily Workload limits */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.78rem',
+                      color: 'var(--text-muted)',
+                      paddingTop: '0.5rem',
+                      borderTop: '1px solid var(--border-color)'
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Clock size={13} /> Max Daily: <strong>{fac.maxPeriodsPerDay} periods</strong>
+                    </span>
+                    <span>Weekly: <strong>{fac.maxPeriodsPerWeek} periods</strong></span>
+                  </div>
                 </div>
 
-                {/* Covered Subjects */}
-                <div
-                  style={{
-                    padding: '0.6rem 0.75rem',
-                    borderRadius: '8px',
-                    background: '#f8fafc',
-                    border: '1px solid var(--border-color)',
-                    marginBottom: '0.85rem'
-                  }}
-                >
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem' }}>
-                    Subjects Covering ({coveredSubjects.length})
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                    {coveredSubjects.length > 0 ? (
-                      coveredSubjects.map((subj) => (
-                        <span
-                          key={subj.id}
-                          style={{
-                            fontSize: '0.78rem',
-                            fontWeight: 700,
-                            padding: '0.2rem 0.6rem',
-                            borderRadius: '6px',
-                            background: `${subj.color || '#2563eb'}18`,
-                            color: subj.color || '#2563eb',
-                            border: `1px solid ${subj.color || '#2563eb'}40`
-                          }}
-                        >
-                          {subj.name}
-                        </span>
-                      ))
-                    ) : (
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Unassigned</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Contact details */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-sub)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <Mail size={14} color="var(--text-muted)" /> {fac.email}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <Phone size={14} color="var(--text-muted)" /> {fac.phone}
-                  </div>
-                </div>
-
-                {/* Grades Undertaking */}
-                <div style={{ marginTop: '0.9rem' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                    Grades Undertaking:
-                  </div>
-                  <div className="card-tags">
-                    {fac.grades && fac.grades.length > 0 ? (
-                      fac.grades.map((grd) => (
-                        <span key={grd} className="tag">
-                          {grd}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="tag">General</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Daily Workload limits */}
+                {/* Action Footer */}
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    fontSize: '0.78rem',
-                    color: 'var(--text-muted)',
-                    paddingTop: '0.5rem',
+                    justifyContent: 'flex-end',
+                    gap: '0.5rem',
+                    marginTop: '1.25rem',
+                    paddingTop: '0.75rem',
                     borderTop: '1px solid var(--border-color)'
                   }}
                 >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <Clock size={13} /> Max Daily: <strong>{fac.maxPeriodsPerDay} periods</strong>
-                  </span>
-                  <span>Weekly: <strong>{fac.maxPeriodsPerWeek} periods</strong></span>
+                  <button
+                    className="btn btn-secondary btn-icon-only"
+                    onClick={() => handleOpenEdit(fac)}
+                    title="Edit Faculty Details"
+                  >
+                    <Edit size={16} />
+                  </button>
+                  <button
+                    className="btn btn-danger btn-icon-only"
+                    onClick={() => confirmDelete(fac)}
+                    title="Remove Faculty Member"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
-
-              {/* Action Footer */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                  gap: '0.5rem',
-                  marginTop: '1.25rem',
-                  paddingTop: '0.75rem',
-                  borderTop: '1px solid var(--border-color)'
-                }}
-              >
-                <button
-                  className="btn btn-secondary btn-icon-only"
-                  onClick={() => handleOpenEdit(fac)}
-                  title="Edit Faculty Details"
-                >
-                  <Edit size={16} />
-                </button>
-                <button
-                  className="btn btn-danger btn-icon-only"
-                  onClick={() => confirmDelete(fac)}
-                  title="Remove Faculty Member"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
       )}
 
       {/* Add / Edit Modal */}
