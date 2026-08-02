@@ -166,28 +166,35 @@ export function SchoolProvider({ children }) {
           fetch('http://localhost:5000/api/time-slots/bell-config')
         ]);
 
+        let loadedClasses = [];
+        let loadedSubjects = [];
+        let loadedVenues = [];
+        let loadedFaculties = [];
+        let loadedEcaSchedule = {};
+        let loadedBellConfig = bellConfig;
+
         if (classesRes.ok) {
           const data = await classesRes.json();
-          const items = Array.isArray(data) ? data : (data.data || []);
-          setClasses(items);
+          loadedClasses = Array.isArray(data) ? data : (data.data || []);
+          setClasses(loadedClasses);
         }
 
         if (subjectsRes.ok) {
           const data = await subjectsRes.json();
-          const items = Array.isArray(data) ? data : (data.data || []);
-          setSubjects(items);
+          loadedSubjects = Array.isArray(data) ? data : (data.data || []);
+          setSubjects(loadedSubjects);
         }
 
         if (venuesRes.ok) {
           const data = await venuesRes.json();
-          const items = Array.isArray(data) ? data : (data.data || []);
-          setVenues(items);
+          loadedVenues = Array.isArray(data) ? data : (data.data || []);
+          setVenues(loadedVenues);
         }
 
         if (facultiesRes.ok) {
           const data = await facultiesRes.json();
-          const items = Array.isArray(data) ? data : (data.data || []);
-          setFaculties(items);
+          loadedFaculties = Array.isArray(data) ? data : (data.data || []);
+          setFaculties(loadedFaculties);
         }
 
         if (gradesRes && gradesRes.ok) {
@@ -206,7 +213,8 @@ export function SchoolProvider({ children }) {
             setEcaVerticalDetails(ecaPayload.verticalDetails);
           }
           if (ecaPayload.schedule && typeof ecaPayload.schedule === 'object') {
-            setEcaSchedule(ecaPayload.schedule);
+            loadedEcaSchedule = ecaPayload.schedule;
+            setEcaSchedule(loadedEcaSchedule);
           }
         }
 
@@ -221,7 +229,30 @@ export function SchoolProvider({ children }) {
         if (bellConfigRes && bellConfigRes.ok) {
           const data = await bellConfigRes.json();
           if (data.data) {
-            setBellConfig(data.data);
+            loadedBellConfig = data.data;
+            setBellConfig(loadedBellConfig);
+          }
+        }
+
+        if (loadedClasses.length > 0) {
+          const generated = generateAutoTimetable({
+            faculties: loadedFaculties,
+            venues: loadedVenues,
+            classes: loadedClasses,
+            subjects: loadedSubjects,
+            ecaSchedule: loadedEcaSchedule,
+            bellConfig: loadedBellConfig,
+            targetClassId: 'all',
+            targetGrade: 'all',
+            existingTimetable: []
+          });
+          if (generated.timetable && generated.timetable.length > 0) {
+            const currentWeek = toWeekKey(getMondayOfWeek(new Date()));
+            setWeeklyTimetables(prev => ({
+              ...prev,
+              [currentWeek]: generated.timetable
+            }));
+            setTimetableStats(generated.stats);
           }
         }
       } catch (err) {
@@ -294,13 +325,14 @@ export function SchoolProvider({ children }) {
   // ── ECA Handlers (persisted to MySQL via API) ──
   const updateEcaCell = async (day, vertical, newCellData, grade = '4') => {
     const key = `${grade}_${day}`;
-    setEcaSchedule(prev => ({
-      ...prev,
+    const nextEcaSchedule = {
+      ...ecaSchedule,
       [key]: {
-        ...prev[key],
+        ...ecaSchedule[key],
         [vertical]: newCellData
       }
-    }));
+    };
+    setEcaSchedule(nextEcaSchedule);
     try {
       await fetch('http://localhost:5000/api/eca/cell', {
         method: 'POST',
@@ -310,6 +342,22 @@ export function SchoolProvider({ children }) {
     } catch (err) {
       console.warn('Failed to persist ECA cell to backend:', err.message);
     }
+    const result = generateAutoTimetable({
+      faculties,
+      venues,
+      classes,
+      subjects,
+      ecaSchedule: nextEcaSchedule,
+      bellConfig,
+      targetClassId: 'all',
+      targetGrade: 'all',
+      existingTimetable: []
+    });
+    setWeeklyTimetables(prev => ({
+      ...prev,
+      [activeWeekKey]: result.timetable
+    }));
+    setTimetableStats(result.stats);
     showToast(`Updated Grade ${grade} ECA activity for ${vertical} on ${day}.`);
   };
 

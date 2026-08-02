@@ -22,11 +22,18 @@ import {
 } from 'lucide-react';
 
 function getGradeVal(cls) {
-  if (!cls || cls.grade === undefined) return '4';
-  if (typeof cls.grade === 'object' && cls.grade !== null) {
-    return String(cls.grade.name || cls.grade.id || '4').replace('Grade ', '');
+  if (!cls) return '4';
+  if (cls.gradeName !== undefined && cls.gradeName !== null) return String(cls.gradeName).replace('Grade ', '').trim();
+  if (cls.gradeId !== undefined && cls.gradeId !== null) return String(cls.gradeId).replace('Grade ', '').trim();
+  if (cls.grade !== undefined && cls.grade !== null) {
+    if (typeof cls.grade === 'object') return String(cls.grade.name || cls.grade.id || '4').replace('Grade ', '').trim();
+    return String(cls.grade).replace('Grade ', '').trim();
   }
-  return String(cls.grade).replace('Grade ', '');
+  if (cls.name) {
+    const match = String(cls.name).match(/(?:Grade\s*)?(\d+)/i);
+    if (match) return match[1];
+  }
+  return '4';
 }
 
 // Helper: Convert 12hr/24hr string into total minutes from midnight
@@ -657,8 +664,8 @@ export default function TimetableScheduler() {
                                 background: isEca
                                   ? 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)'
                                   : isFitness
-                                  ? 'linear-gradient(135deg, #f0fdf4 0%, #d1fae5 100%)'
-                                  : '#ffffff',
+                                    ? 'linear-gradient(135deg, #f0fdf4 0%, #d1fae5 100%)'
+                                    : '#ffffff',
                                 borderLeft: slot?.subjectColor ? `3px solid ${slot.subjectColor}` : '3px solid #3b82f6',
                                 cursor: 'pointer',
                                 transition: 'all 0.15s ease'

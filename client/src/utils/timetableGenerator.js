@@ -1,4 +1,4 @@
-import { DAYS } from './constants';
+import { DAYS } from './constants.js';
 
 // ─── Constants ───
 const MIN_PERIOD_MINS = 15;   // Absolute minimum: no period shorter than 15 minutes
@@ -166,11 +166,17 @@ export function generateAutoTimetable({
   // Helper to extract grade string
   const getGradeStr = (c) => {
     if (!c) return '4';
-    const g = typeof c === 'object' && c !== null && c.grade !== undefined ? c.grade : c;
-    if (typeof g === 'object' && g !== null) {
-      return String(g.name || g.id || '4').replace('Grade ', '');
+    if (c.gradeName !== undefined && c.gradeName !== null) return String(c.gradeName).replace('Grade ', '').trim();
+    if (c.gradeId !== undefined && c.gradeId !== null) return String(c.gradeId).replace('Grade ', '').trim();
+    if (c.grade !== undefined && c.grade !== null) {
+      if (typeof c.grade === 'object') return String(c.grade.name || c.grade.id || '4').replace('Grade ', '').trim();
+      return String(c.grade).replace('Grade ', '').trim();
     }
-    return String(g || '4').replace('Grade ', '');
+    if (c.name) {
+      const match = String(c.name).match(/(?:Grade\s*)?(\d+)/i);
+      if (match) return match[1];
+    }
+    return '4';
   };
 
   // Determine classes to process
@@ -191,49 +197,17 @@ export function generateAutoTimetable({
     timetable.push(slot);
   });
 
-  // Find Physical Fitness subject
-  const pfSubj = subjects.find(s =>
-    s.name.toLowerCase().includes('fitness') || s.name.toLowerCase().includes('physical')
-  ) || {
-    id: 'subj_pf', name: 'Physical Fitness', code: 'PF',
-    weeklyDuration: '01:30', weeklyPeriods: 6, color: '#059669'
-  };
-  const pfFaculty = faculties.find(f => f.primarySubjectId === pfSubj.id) || faculties[0] || { id: 'f_pf', name: 'Fitness Coach' };
-  const pfDuration = Math.max(MIN_PERIOD_MINS, getSubjectPeriodDurationMins(pfSubj));
-
   // Process each targeted class
   classesToProcess.forEach((cls) => {
     const classGrade = getGradeStr(cls);
 
-    // Filter subjects applicable to this grade (exclude Physical Fitness — handled separately)
+    // Filter subjects applicable to this grade
     const gradeSubjects = subjects.filter(s => {
-      if (s.name.toLowerCase().includes('fitness') || s.name.toLowerCase().includes('physical')) return false;
       if (!s.grade || s.grade === 'all') return true;
       const sg = String(s.grade).replace('Grade ', '').trim();
       return sg === classGrade || (Array.isArray(s.grades) && s.grades.includes(classGrade));
     });
-    const activeSubjects = gradeSubjects.length > 0
-      ? gradeSubjects
-      : subjects.filter(s => !s.name.toLowerCase().includes('fitness') && !s.name.toLowerCase().includes('physical'));
-
-    // Build master workload pool: each subject appears `weeklyPeriods` times
-    const masterPool = [];
-    activeSubjects.forEach((subj) => {
-      const targetFaculty = faculties.find(f =>
-        (f.primarySubjectId === subj.id || (f.secondarySubjectIds && f.secondarySubjectIds.includes(subj.id)))
-      ) || faculties.find(f => f.primarySubjectId === subj.id) || faculties[0] || { id: 'f_default', name: 'Staff Faculty' };
-
-      const count = Number(subj.weeklyPeriods) || 4;
-      const periodDurationMins = getSubjectPeriodDurationMins(subj);
-
-      for (let i = 0; i < count; i++) {
-        masterPool.push({
-          subject: subj,
-          faculty: targetFaculty,
-          periodDurationMins
-        });
-      }
-    });
+    const activeSubjects = gradeSubjects.length > 0 ? gradeSubjects : subjects;
 
     // Track how many times each subject has been allocated across the week
     const weeklySubjectAllocCount = {};
@@ -247,17 +221,47 @@ export function generateAutoTimetable({
       const activeEcaList = [];
       if (typeof dayEcaMap === 'object') {
         Object.entries(dayEcaMap).forEach(([vertName, vertData]) => {
+          // Physical Fitness is strictly reserved for Period 1 morning; do not duplicate in afternoon ECA
+          if (vertName.toLowerCase().includes('physical fitness') || vertName.toLowerCase().includes('fitness')) {
+            return;
+          }
           if (vertData && (vertData.active || (vertData.label && vertData.label !== 'No' && !vertData.label.startsWith('No')))) {
-            activeEcaList.push({
-              name: vertName,
-              label: vertData.label || vertName,
-              duration: vertData.duration || '45 mins',
-              color: vertData.color || '#d97706'
-            });
+            const target = vertData.target || 'All';
+            const isBoth = target === 'Both' || (vertData.label && (vertData.label.includes('Both') || vertData.label.includes('Boys & Girls')));
+
+            if (isBoth) {
+              activeEcaList.push({
+                name: vertName,
+                label: `Yes - Boys (${vertData.duration || '45 mins'})`,
+                duration: vertData.duration || '45 mins',
+                color: vertData.color || '#d97706',
+                target: 'Boys',
+                displayName: `${vertName} (Boys)`
+              });
+              activeEcaList.push({
+                name: vertName,
+                label: `Yes - Girls (${vertData.duration || '45 mins'})`,
+                duration: vertData.duration || '45 mins',
+                color: vertData.color || '#d97706',
+                target: 'Girls',
+                displayName: `${vertName} (Girls)`
+              });
+            } else {
+              activeEcaList.push({
+                name: vertName,
+                label: vertData.label || vertName,
+                duration: vertData.duration || '45 mins',
+                color: vertData.color || '#d97706',
+                target,
+                displayName: target && target !== 'All' ? `${vertName} (${target})` : vertName
+              });
+            }
           }
         });
       }
-      const activeEca = activeEcaList[0];
+
+      // Track remaining ECA slots to place for this day
+      const pendingEcaQueue = [...activeEcaList];
 
       // ─── Fresh shuffled pool PER DAY using a different seed ───
       // Seed varies by class + day so each day gets a DIFFERENT subject order
@@ -304,49 +308,48 @@ export function generateAutoTimetable({
         while (currentMins < session.end) {
           const remaining = session.end - currentMins;
 
-          // Skip if remaining window is less than minimum period duration
-          if (remaining < MIN_PERIOD_MINS) {
-            currentMins = session.end;
-            break;
-          }
-
-          // ─── RULE: Period 1 is ALWAYS Physical Fitness ───
-          if (session.id === 1 && currentMins === sStart) {
-            const dur = Math.min(pfDuration, remaining);
+          // ─── RULE: Period 1 is ALWAYS Morning Physical Fitness (15 mins) ───
+          if (session.id === 1 && currentMins === session.start) {
+            const pfDur = 15;
             const startStr = formatMinutesTo12Hr(currentMins);
-            const endStr = formatMinutesTo12Hr(currentMins + dur);
-            const homeVenue = venues.find(v => v.id === cls.homeVenueId) || venues[0] || { id: 'v1', roomNo: 'Room 100', type: 'normal' };
+            const endStr = formatMinutesTo12Hr(currentMins + pfDur);
 
             timetable.push({
               id: `slot_${cls.id}_d${day}_p${periodIndex}`,
               classId: cls.id, className: cls.name,
               day, period: periodIndex++,
-              periodName: 'Period 1',
+              periodName: `Period ${periodIndex - 1}`,
               periodTime: `${startStr} - ${endStr}`,
               startTime: startStr, endTime: endStr,
-              durationMins: dur,
-              subjectId: pfSubj.id,
-              subjectName: pfSubj.name || 'Physical Fitness',
-              subjectCode: pfSubj.code || 'PF',
-              subjectColor: pfSubj.color || '#059669',
-              facultyId: pfFaculty.id, facultyName: pfFaculty.name,
-              venueId: homeVenue.id, venueName: homeVenue.name || 'Room 100',
-              venueRoomNo: homeVenue.roomNo || 'Room 100', venueType: 'normal',
-              isConflict: false, conflictReason: null
+              durationMins: pfDur,
+              subjectId: 'sub_physical_fitness',
+              subjectName: 'Physical Fitness',
+              subjectCode: 'FITNESS',
+              subjectColor: '#059669',
+              facultyId: 'f_pe', facultyName: 'Physical Education Staff',
+              venueId: 'v_ground', venueName: 'Sports Ground / Playground',
+              venueRoomNo: 'Outdoor Ground', venueType: 'sports',
+              isConflict: false, conflictReason: null,
+              ecaTag: 'Morning Fitness'
             });
 
-            todayPlaced.add(pfSubj.id);
-            currentMins += dur;
+            currentMins += pfDur;
             continue;
           }
 
-          // ─── RULE: ECA Slot in Session 3 (Post-Lunch) at start ───
-          if (session.id === 3 && activeEca && currentMins === lEnd) {
+          // ─── RULE: ECA Slots in Session 3 (Post-Lunch) ───
+          if (session.id === 3 && pendingEcaQueue.length > 0) {
+            const nextEca = pendingEcaQueue.shift();
             let ecaDur = 45;
-            const durStr = String(activeEca.duration || '').toLowerCase();
-            if (durStr.includes('1 hour') || durStr.includes('60')) ecaDur = 60;
-            else if (durStr.includes('30')) ecaDur = 30;
-            else if (durStr.includes('15')) ecaDur = 15;
+            const durStr = String(nextEca.duration || nextEca.label || '').toLowerCase();
+            const numMatch = durStr.match(/(\d+)/);
+            if (durStr.includes('1 hour') || durStr.includes('60')) {
+              ecaDur = 60;
+            } else if (numMatch) {
+              let parsed = parseInt(numMatch[1], 10);
+              if (durStr.includes('hour') || durStr.includes('hr')) parsed *= 60;
+              if (parsed > 0) ecaDur = parsed;
+            }
             ecaDur = roundTo5(ecaDur);
             ecaDur = Math.min(ecaDur, remaining);
             ecaDur = Math.max(MIN_PERIOD_MINS, ecaDur);
@@ -358,19 +361,19 @@ export function generateAutoTimetable({
               id: `slot_${cls.id}_d${day}_p${periodIndex}`,
               classId: cls.id, className: cls.name,
               day, period: periodIndex++,
-              periodName: 'ECA Slot',
+              periodName: `Period ${periodIndex - 1}`,
               periodTime: `${startStr} - ${endStr}`,
               startTime: startStr, endTime: endStr,
               durationMins: ecaDur,
-              subjectId: 'eca_non_academic',
-              subjectName: `${activeEca.name} (${activeEca.label})`,
+              subjectId: `eca_${nextEca.name.toLowerCase().replace(/\s+/g, '_')}_${nextEca.target.toLowerCase()}`,
+              subjectName: nextEca.displayName,
               subjectCode: 'ECA',
-              subjectColor: activeEca.color || '#d97706',
+              subjectColor: nextEca.color || '#d97706',
               facultyId: null, facultyName: 'ECA Instructor',
-              venueId: cls.homeVenueId || null, venueName: 'ECA Zone',
-              venueRoomNo: 'ECA Zone', venueType: 'eca',
+              venueId: cls.homeVenueId || null, venueName: `${nextEca.name} Zone`,
+              venueRoomNo: `${nextEca.name} Area`, venueType: 'eca',
               isConflict: false, conflictReason: null,
-              ecaTag: activeEca.name
+              ecaTag: nextEca.displayName
             });
 
             currentMins += ecaDur;

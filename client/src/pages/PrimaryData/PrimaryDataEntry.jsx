@@ -814,106 +814,106 @@ export default function PrimaryDataEntry() {
                       gap: '1.25rem'
                     }}
                   >
-                  {gradeClasses.map((cls) => {
-                    const venue = venues.find((v) => v.id === cls.homeVenueId);
+                    {gradeClasses.map((cls) => {
+                      const venue = venues.find((v) => v.id === cls.homeVenueId);
 
-                    return (
-                      <div
-                        key={cls.id}
-                        style={{
-                          background: '#ffffff',
-                          border: '1.5px solid var(--border-color)',
-                          borderRadius: 'var(--radius-md)',
-                          padding: '1.25rem',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '1rem',
-                          boxShadow: '0 2px 6px rgba(15, 23, 42, 0.03)',
-                          transition: 'all var(--transition-fast)'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                            <span
-                              style={{
-                                width: '36px',
-                                height: '36px',
-                                borderRadius: '50%',
-                                background: '#eff6ff',
-                                color: '#2563eb',
-                                fontWeight: 800,
-                                fontSize: '1rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                border: '1px solid #bfdbfe'
-                              }}
-                            >
-                              {cls.section}
-                            </span>
-                            <div>
-                              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                                {cls.name}
-                              </div>
-                              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                Academic Section {cls.section}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'flex', gap: '0.35rem' }}>
-                            <button
-                              className="btn btn-secondary"
-                              style={{ padding: '0.4rem 0.6rem' }}
-                              onClick={() => openSectionModal(cls.grade, cls)}
-                              title="Edit Section"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              className="btn btn-secondary"
-                              style={{ padding: '0.4rem 0.6rem', color: '#ef4444' }}
-                              onClick={() => setDeleteTarget({ type: 'class', data: cls })}
-                              title="Delete Section"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-
+                      return (
                         <div
+                          key={cls.id}
                           style={{
+                            background: '#ffffff',
+                            border: '1.5px solid var(--border-color)',
+                            borderRadius: 'var(--radius-md)',
+                            padding: '1.25rem',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '0.5rem',
-                            padding: '0.85rem 1rem',
-                            borderRadius: 'var(--radius-sm)',
-                            background: '#f8fafc',
-                            border: '1px solid #e2e8f0',
-                            fontSize: '0.82rem'
+                            gap: '1rem',
+                            boxShadow: '0 2px 6px rgba(15, 23, 42, 0.03)',
+                            transition: 'all var(--transition-fast)'
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                              <Users size={14} /> Student Capacity:
-                            </span>
-                            <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>
-                              {cls.studentCount} Students
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                              <span
+                                style={{
+                                  width: '36px',
+                                  height: '36px',
+                                  borderRadius: '50%',
+                                  background: '#eff6ff',
+                                  color: '#2563eb',
+                                  fontWeight: 800,
+                                  fontSize: '1rem',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  border: '1px solid #bfdbfe'
+                                }}
+                              >
+                                {cls.section}
+                              </span>
+                              <div>
+                                <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                                  {cls.name}
+                                </div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                  Academic Section {cls.section}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '0.35rem' }}>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.4rem 0.6rem' }}
+                                onClick={() => openSectionModal(cls.grade, cls)}
+                                title="Edit Section"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.4rem 0.6rem', color: '#ef4444' }}
+                                onClick={() => setDeleteTarget({ type: 'class', data: cls })}
+                                title="Delete Section"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                              <Home size={14} /> Assigned Classroom:
-                            </span>
-                            <span style={{ fontWeight: 700, color: '#0284c7' }}>
-                              {venue ? `${venue.roomNo} (${venue.type === 'projector' ? 'Projector Room' : 'Standard Room'})` : 'Main Classroom'}
-                            </span>
+
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.5rem',
+                              padding: '0.85rem 1rem',
+                              borderRadius: 'var(--radius-sm)',
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              fontSize: '0.82rem'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <Users size={14} /> Student Capacity:
+                              </span>
+                              <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>
+                                {cls.studentCount} Students
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <Home size={14} /> Assigned Classroom:
+                              </span>
+                              <span style={{ fontWeight: 700, color: '#0284c7' }}>
+                                {venue ? `${venue.roomNo} (${venue.type === 'projector' ? 'Projector Room' : 'Standard Room'})` : 'Main Classroom'}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             );
