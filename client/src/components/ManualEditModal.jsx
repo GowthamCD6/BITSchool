@@ -3,7 +3,7 @@ import Modal from './Modal';
 import { useSchool } from '../context/SchoolContext';
 
 export default function ManualEditModal({ isOpen, onClose, slotToEdit }) {
-  const { subjects, faculties, venues, updateTimetableSlot } = useSchool();
+  const { subjects, faculties, venues, updateTimetableSlot, deleteTimetableSlot } = useSchool();
 
   const [formData, setFormData] = useState({
     subjectId: '',
@@ -28,22 +28,37 @@ export default function ManualEditModal({ isOpen, onClose, slotToEdit }) {
     onClose();
   };
 
+  const handleDeleteSlot = () => {
+    if (!slotToEdit) return;
+    deleteTimetableSlot(slotToEdit.id);
+    onClose();
+  };
+
   if (!slotToEdit) return null;
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Edit Slot: ${slotToEdit.className} (${slotToEdit.day} - ${slotToEdit.periodName})`}
+      title={`Edit Slot: ${slotToEdit.className || ''} (${slotToEdit.day} - ${slotToEdit.periodName})`}
       footer={
-        <>
-          <button className="btn btn-secondary" onClick={onClose}>
-            Cancel
+        <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button
+            className="btn btn-danger"
+            style={{ padding: '0.45rem 0.9rem', fontSize: '0.82rem', background: '#ef4444', color: '#ffffff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+            onClick={handleDeleteSlot}
+          >
+            Delete / Clear Slot
           </button>
-          <button className="btn btn-primary" onClick={handleSubmit}>
-            Update Slot
-          </button>
-        </>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn btn-primary" onClick={handleSubmit}>
+              Update Slot
+            </button>
+          </div>
+        </div>
       }
     >
       <form onSubmit={handleSubmit}>

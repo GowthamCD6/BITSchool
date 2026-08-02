@@ -104,9 +104,9 @@ export default function VenueModal({ isOpen, onClose, venueToEdit }) {
             value={formData.type}
             onChange={(e) => setFormData({ ...formData, type: e.target.value })}
           >
-            {venueTypes.map((vt) => (
+            {(venueTypes || []).filter((vt) => vt.id !== 'ALL').map((vt) => (
               <option key={vt.id} value={vt.id}>
-                {vt.name}
+                {vt.label || vt.name || vt.id}
               </option>
             ))}
           </select>

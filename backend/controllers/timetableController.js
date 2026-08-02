@@ -112,16 +112,39 @@ export const updateTimetableSlot = async (req, res) => {
   }
 };
 
-// DELETE /api/timetables/:weekKey - Clear all or specific class timetable slots
+// DELETE /api/timetables/slot/:id - Delete single slot from MySQL
+export const deleteSingleSlot = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await TimetableSlot.destroy({ where: { id } });
+    return res.status(200).json({ success: true, message: `Slot ${id} deleted successfully.` });
+  } catch (error) {
+    console.error('[MySQL Error] Deleting single slot:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// DELETE /api/timetables/:weekKey - Clear all, grade-specific, or class-specific timetable slots
 export const deleteWeekTimetable = async (req, res) => {
   try {
     const { weekKey } = req.params;
     if (weekKey === 'all') {
       await TimetableSlot.destroy({ where: {}, truncate: true });
+    } else if (weekKey.startsWith('grade_')) {
+      const gNum = weekKey.replace('grade_', '');
+      const { Op } = await import('sequelize');
+      await TimetableSlot.destroy({
+        where: {
+          [Op.or]: [
+            { className: { [Op.like]: `%Grade ${gNum}%` } },
+            { classId: gNum }
+          ]
+        }
+      });
     } else {
       await TimetableSlot.destroy({ where: { classId: weekKey } });
     }
-    return res.status(200).json({ success: true, message: 'Timetable slots deleted from MySQL.' });
+    return res.status(200).json({ success: true, message: 'Targeted timetable slots deleted from MySQL.' });
   } catch (error) {
     console.error('[MySQL Error] Deleting timetable:', error);
     return res.status(500).json({ success: false, message: error.message });

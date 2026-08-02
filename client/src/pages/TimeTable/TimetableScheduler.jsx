@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useSchool } from '../../context/SchoolContext';
 import ManualEditModal from '../../components/ManualEditModal';
+import ConfirmModal from '../../components/ConfirmModal';
 import { calculateDynamicPeriodsFromBellConfig } from '../../utils/timetableGenerator';
 import {
   Sparkles,
@@ -17,7 +18,9 @@ import {
   Coffee,
   Utensils,
   Clock,
-  BookOpen
+  BookOpen,
+  Trash2,
+  Edit3
 } from 'lucide-react';
 
 function getGradeVal(cls) {
@@ -75,7 +78,9 @@ export default function TimetableScheduler() {
     days = [],
     bellConfig = {},
     ecaSchedule = {},
-    handleAutoGenerateTimetable
+    handleAutoGenerateTimetable,
+    deleteTimetableSlot,
+    clearTimetable
   } = schoolContext || {};
 
   // ── Timetable View State ──
@@ -86,6 +91,23 @@ export default function TimetableScheduler() {
   const [selectedFacultyId, setSelectedFacultyId] = useState(faculties[0]?.id || 'f1');
   const [selectedVenueId, setSelectedVenueId] = useState(venues[0]?.id || 'v1');
   const [slotToEdit, setSlotToEdit] = useState(null);
+  const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
+  const [slotToDelete, setSlotToDelete] = useState(null);
+
+  const handleConfirmClearAll = () => {
+    if (clearTimetable) {
+      clearTimetable({
+        gradeFilter: selectedGradeFilter,
+        classId: viewMode === 'class' ? selectedClassId : 'ALL'
+      });
+    }
+  };
+
+  const handleConfirmDeleteSingleSlot = () => {
+    if (slotToDelete && deleteTimetableSlot) {
+      deleteTimetableSlot(slotToDelete.id);
+    }
+  };
 
   // Direct Auto-Generate handler using top header filters (No Modal Popup)
   const handleRunDirectAutoGenerate = () => {
@@ -318,13 +340,6 @@ export default function TimetableScheduler() {
             >
               Faculty View
             </button>
-            <button
-              className={`btn ${viewMode === 'venue' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem', borderRadius: '6px', border: 'none' }}
-              onClick={() => setViewMode('venue')}
-            >
-              Venue View
-            </button>
           </div>
 
           {/* 1. Grade Filter Dropdown (FIRST - FETCHED FROM BACKEND API) */}
@@ -380,20 +395,6 @@ export default function TimetableScheduler() {
               ))}
             </select>
           )}
-
-          {viewMode === 'venue' && (
-            <select
-              className="select-custom"
-              value={selectedVenueId}
-              onChange={(e) => setSelectedVenueId(e.target.value)}
-            >
-              {venues.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.roomNo} - {v.name} ({v.type === 'projector' ? 'Projector' : v.type})
-                </option>
-              ))}
-            </select>
-          )}
         </div>
 
         {/* Right Side: Action Buttons Bar */}
@@ -405,6 +406,16 @@ export default function TimetableScheduler() {
             <Sparkles size={16} /> Auto-Generate Timetable
           </button>
 
+          <button
+            className="btn btn-secondary"
+            onClick={() => setIsConfirmClearOpen(true)}
+            title="Clear Timetable Schedule"
+            disabled={!hasGeneratedTimetable}
+            style={{ color: '#ef4444', borderColor: '#fecdd3', background: '#fff5f5' }}
+          >
+            <Trash2 size={16} /> Clear Schedule
+          </button>
+
           <button className="btn btn-secondary" onClick={handleExportCSV} title="Export CSV" disabled={!hasGeneratedTimetable}>
             <Download size={16} /> CSV
           </button>
@@ -412,6 +423,14 @@ export default function TimetableScheduler() {
             <Printer size={16} /> Print
           </button>
         </div>
+      </div>
+
+      {/* Print-Only Clean Institution Header (Visible only when printing) */}
+      <div className="print-only-header">
+        <h2>BITSchool Master Academic Timetable</h2>
+        <p>
+          {viewMode === 'class' ? `Class Schedule: ${activeClassObj?.name || ''} (Grade ${activeGradeStr})` : `Faculty Schedule: ${faculties.find(f => f.id === selectedFacultyId)?.name || ''}`} | Academic Schedule Matrix
+        </p>
       </div>
 
       {/* ── TIMETABLE DISPLAY AREA ── */}
@@ -623,11 +642,35 @@ export default function TimetableScheduler() {
                                     >
                                       {slot.subjectName}
                                     </div>
-                                    {slot.isConflict && (
-                                      <span title="Schedule Conflict!" style={{ color: '#ef4444' }}>
-                                        <AlertTriangle size={12} />
-                                      </span>
-                                    )}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                      {slot.isConflict && (
+                                        <span title="Schedule Conflict!" style={{ color: '#ef4444' }}>
+                                          <AlertTriangle size={12} />
+                                        </span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        style={{ border: 'none', background: 'transparent', padding: '1px 3px', cursor: 'pointer', color: '#94a3b8', borderRadius: '4px' }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSlotToEdit(slot);
+                                        }}
+                                        title="Edit slot"
+                                      >
+                                        <Edit3 size={11} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        style={{ border: 'none', background: 'transparent', padding: '1px 3px', cursor: 'pointer', color: '#ef4444', borderRadius: '4px' }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSlotToDelete(slot);
+                                        }}
+                                        title="Delete slot"
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    </div>
                                   </div>
 
                                   <div style={{ fontSize: '0.67rem', color: isEca ? '#b45309' : '#64748b', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', fontWeight: 600 }}>
@@ -821,6 +864,26 @@ export default function TimetableScheduler() {
         isOpen={!!slotToEdit}
         onClose={() => setSlotToEdit(null)}
         slotToEdit={slotToEdit}
+      />
+
+      {/* Clear Schedule Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isConfirmClearOpen}
+        onClose={() => setIsConfirmClearOpen(false)}
+        onConfirm={handleConfirmClearAll}
+        title="Clear Timetable Schedule"
+        message="Are you sure you want to clear/reset the active timetable schedule? This will delete assigned slots and return them to Open Slots."
+        confirmText="Clear Schedule"
+      />
+
+      {/* Delete Single Slot Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!slotToDelete}
+        onClose={() => setSlotToDelete(null)}
+        onConfirm={handleConfirmDeleteSingleSlot}
+        title="Delete Slot Assignment"
+        message={`Are you sure you want to remove the slot assignment for "${slotToDelete?.subjectName || ''}" (${slotToDelete?.day || ''} - ${slotToDelete?.periodName || ''})?`}
+        confirmText="Delete Slot"
       />
     </div>
   );

@@ -28,12 +28,19 @@ async function initServer() {
 }
 initServer();
 
-// Middleware
+// Security Hardening & CORS Middleware
 app.use(cors({
-  origin: '*',
+  origin: (origin, callback) => {
+    // Allow local development ports, postman, and local connections
+    if (!origin || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {

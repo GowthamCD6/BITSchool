@@ -3,9 +3,9 @@
 .db-container {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.75rem;
   width: 100%;
-  padding-bottom: 2rem;
+  padding-bottom: 0;
   animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -138,13 +138,13 @@
 .db-kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.25rem;
+  gap: 0.75rem;
 }
 
 .db-kpi-card {
   background: #ffffff;
-  border-radius: 16px;
-  padding: 1.35rem 1.5rem;
+  border-radius: 14px;
+  padding: 0.85rem 1.1rem;
   border: 1px solid #e2e8f0;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.03);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -156,8 +156,8 @@
 }
 
 .db-kpi-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 24px -4px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px -4px rgba(15, 23, 42, 0.08);
   border-color: #cbd5e1;
 }
 
@@ -167,33 +167,33 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.5rem;
 }
 
 .db-kpi-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   flex-shrink: 0;
 }
 
 .db-kpi-val {
-  font-size: 1.8rem;
+  font-size: 1.65rem;
   font-weight: 800;
   color: #0f172a;
-  letter-spacing: -0.6px;
+  letter-spacing: -0.5px;
   line-height: 1.2;
 }
 
 .db-kpi-lbl {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: #64748b;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.15rem;
 }
 
 .db-badge-trend {
@@ -234,13 +234,13 @@
 .db-charts-grid {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
-  gap: 1.5rem;
+  gap: 0.75rem;
 }
 
 .db-chart-card {
   background: #ffffff;
-  border-radius: 16px;
-  padding: 1.5rem;
+  border-radius: 14px;
+  padding: 1rem 1.15rem;
   border: 1px solid #e2e8f0;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.03);
   display: flex;
@@ -262,7 +262,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.65rem;
   flex-wrap: wrap;
   gap: 0.5rem;
 }

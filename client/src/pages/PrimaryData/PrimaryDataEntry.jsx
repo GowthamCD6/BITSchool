@@ -300,6 +300,14 @@ export default function PrimaryDataEntry() {
 
   // ── Section Handlers ──
   const openSectionModal = (targetGrade = '10', sectionToEdit = null) => {
+    // Derive venue IDs already assigned to existing class sections
+    const assignedIds = classes
+      .filter((c) => !sectionToEdit || c.id !== sectionToEdit.id)
+      .map((c) => String(c.homeVenueId || c.homeVenue || ''))
+      .filter(Boolean);
+
+    const available = venues.filter((v) => !assignedIds.includes(String(v.id)));
+
     if (sectionToEdit) {
       setEditingSection(sectionToEdit);
       const gVal = getGradeNum(sectionToEdit);
@@ -308,7 +316,7 @@ export default function PrimaryDataEntry() {
         grade: `Grade ${gVal}`,
         section: sectionToEdit.section || '',
         studentCount: sectionToEdit.studentCount !== undefined ? sectionToEdit.studentCount : '',
-        homeVenueId: sectionToEdit.homeVenueId || (venues[0]?.id || '')
+        homeVenueId: sectionToEdit.homeVenueId || (available[0]?.id || '')
       });
     } else {
       setEditingSection(null);
@@ -317,7 +325,7 @@ export default function PrimaryDataEntry() {
         grade: `Grade ${gVal || '10'}`,
         section: '',
         studentCount: '',
-        homeVenueId: venues[0]?.id || ''
+        homeVenueId: available[0]?.id || ''
       });
     }
     setIsSectionModalOpen(true);
@@ -498,7 +506,11 @@ export default function PrimaryDataEntry() {
   const handleAddVerticalSubmit = (e) => {
     e.preventDefault();
     if (!newVerticalName.trim()) return;
-    addEcaVertical(newVerticalName.trim(), selectedVerticalGrades);
+    const targetGrades = selectedVerticalGrades.length > 0
+      ? selectedVerticalGrades
+      : (selectedEcaGrade && selectedEcaGrade !== 'all' ? [selectedEcaGrade] : [uniqueGrades[0]]);
+
+    addEcaVertical(newVerticalName.trim(), targetGrades);
     setNewVerticalName('');
     setSelectedVerticalGrades([]);
     setIsAddVerticalModalOpen(false);
@@ -980,7 +992,7 @@ export default function PrimaryDataEntry() {
                       style={{
                         padding: '0.45rem 1.1rem',
                         borderRadius: 'var(--radius-md)',
-                        background: '#7c3aed',
+                        background: '#2563eb',
                         color: '#ffffff',
                         fontWeight: 800,
                         fontSize: '1.05rem'
@@ -1201,7 +1213,7 @@ export default function PrimaryDataEntry() {
                       style={{
                         padding: '0.45rem 1.1rem',
                         borderRadius: 'var(--radius-md)',
-                        background: '#059669',
+                        background: '#2563eb',
                         color: '#ffffff',
                         fontWeight: 800,
                         fontSize: '1.05rem'
@@ -1244,9 +1256,9 @@ export default function PrimaryDataEntry() {
                                           fontSize: '0.62rem',
                                           padding: '1px 6px',
                                           borderRadius: '8px',
-                                          background: '#ecfdf5',
-                                          color: '#059669',
-                                          border: '1px solid #a7f3d0',
+                                          background: '#eff6ff',
+                                          color: '#2563eb',
+                                          border: '1px solid #bfdbfe',
                                           fontWeight: 700
                                         }}
                                       >
@@ -1315,7 +1327,7 @@ export default function PrimaryDataEntry() {
 
                       {/* TOTAL Row */}
                       <tr className="total-row">
-                        <td style={{ background: '#0f172a', color: '#ffffff', fontWeight: 800 }}>
+                        <td style={{ background: '#1e40af', color: '#ffffff', fontWeight: 800 }}>
                           TOTAL with saturday
                         </td>
                         {gradeVerts.map((vert) => {
@@ -1326,7 +1338,7 @@ export default function PrimaryDataEntry() {
                           });
 
                           return (
-                            <td key={vert} style={{ background: '#f1f5f9', fontWeight: 800, color: '#0f172a' }}>
+                            <td key={vert} style={{ background: '#eff6ff', fontWeight: 800, color: '#1e40af' }}>
                               {totalVal}
                             </td>
                           );
@@ -1366,7 +1378,7 @@ export default function PrimaryDataEntry() {
             Creating Grade <strong>{newGradeLevel || '...'}</strong> will automatically initialize Section A (Grade {newGradeLevel || '...'}-A) with default student capacity and classroom room assignment.
           </div>
 
-          <div className="modal-footer" style={{ padding: 0, background: 'transparent' }}>
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '2.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color)' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setIsAddGradeModalOpen(false)}>
               Cancel
             </button>
@@ -1421,16 +1433,34 @@ export default function PrimaryDataEntry() {
               className="form-control"
               value={sectionForm.homeVenueId}
               onChange={(e) => setSectionForm({ ...sectionForm, homeVenueId: e.target.value })}
+              required
             >
-              {venues.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.roomNo} - {v.name} ({v.type})
-                </option>
-              ))}
+              {(() => {
+                const assignedIds = classes
+                  .filter((c) => !editingSection || c.id !== editingSection.id)
+                  .map((c) => String(c.homeVenueId || c.homeVenue || ''))
+                  .filter(Boolean);
+
+                const available = venues.filter((v) => !assignedIds.includes(String(v.id)));
+
+                if (available.length === 0) {
+                  return (
+                    <option value="" disabled>
+                      ⚠️ All classrooms already allocated to other sections
+                    </option>
+                  );
+                }
+
+                return available.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.roomNo} - {v.name} ({v.type})
+                  </option>
+                ));
+              })()}
             </select>
           </div>
 
-          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '1.5rem' }}>
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '2.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color)' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setIsSectionModalOpen(false)}>
               Cancel
             </button>
@@ -1548,7 +1578,7 @@ export default function PrimaryDataEntry() {
             />
           </div>
 
-          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '1.5rem' }}>
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '2.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color)' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setIsCourseModalOpen(false)}>
               Cancel
             </button>
@@ -1622,13 +1652,28 @@ export default function PrimaryDataEntry() {
             </>
           )}
 
-          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '1.5rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setIsEcaModalOpen(false)}>
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary">
-              Save ECA Activity
-            </button>
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '2.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {ecaForm.active ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ color: '#ef4444', borderColor: '#fca5a5' }}
+                onClick={() => {
+                  updateEcaCell(editingEcaTarget.day, editingEcaTarget.vertical, { active: false, label: 'No', duration: '', target: 'All' }, editingEcaTarget.grade || selectedEcaGrade || '4');
+                  setIsEcaModalOpen(false);
+                }}
+              >
+                Clear / Set to No
+              </button>
+            ) : <div />}
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setIsEcaModalOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary">
+                Save ECA Activity
+              </button>
+            </div>
           </div>
         </form>
       </Modal>
@@ -1700,7 +1745,7 @@ export default function PrimaryDataEntry() {
             )}
           </div>
 
-          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '1.5rem' }}>
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '2.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color)' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setIsAddVerticalModalOpen(false)}>
               Cancel
             </button>
@@ -1791,7 +1836,7 @@ export default function PrimaryDataEntry() {
             </div>
           </div>
 
-          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '1.5rem' }}>
+          <div className="modal-footer" style={{ padding: 0, background: 'transparent', marginTop: '2.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color)' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setIsSlotModalOpen(false)}>
               Cancel
             </button>

@@ -9,17 +9,17 @@
   --bg-header: #ffffff;
   --border-color: #e2e8f0;
   --border-color-glow: #cbd5e1;
-  
+
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
   --primary-glow: rgba(37, 99, 235, 0.15);
-  
+
   --accent-cyan: #0284c7;
   --accent-emerald: #059669;
   --accent-amber: #d97706;
   --accent-purple: #7c3aed;
   --accent-rose: #e11d48;
-  
+
   --text-main: #0f172a;
   --text-muted: #64748b;
   --text-sub: #334155;
@@ -27,7 +27,7 @@
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
-  
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -56,13 +56,16 @@ body {
   width: 7px;
   height: 7px;
 }
+
 ::-webkit-scrollbar-track {
   background: #f1f5f9;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
@@ -85,7 +88,7 @@ body {
 }
 
 .page-body {
-  padding: 1rem 1.75rem 2.5rem 1.75rem;
+  padding: 1rem 1.5rem 0.75rem 1.75rem;
   max-width: 100%;
   width: 100%;
 }
@@ -160,16 +163,20 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
 }
+
 .sidebar-scroll-area::-webkit-scrollbar {
   width: 5px;
 }
+
 .sidebar-scroll-area::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .sidebar-scroll-area::-webkit-scrollbar-thumb {
   background: #d1d5db;
   border-radius: 10px;
 }
+
 .sidebar-scroll-area::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
@@ -427,6 +434,7 @@ body {
   color: #ffffff;
   box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);
 }
+
 .btn-emerald:hover {
   background: #047857;
   transform: translateY(-1px);
@@ -544,15 +552,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 1.75rem;
+  gap: 0.75rem;
+  padding: 0.5rem 1.75rem;
   background: #ffffff;
   border-bottom: 1px solid #e5e7eb;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   margin-top: -1rem;
   margin-left: -1.75rem;
   margin-right: -1.75rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.85rem;
   width: calc(100% + 3.5rem);
   flex-wrap: wrap;
 }
@@ -686,10 +694,12 @@ body {
   outline: none;
   box-shadow: var(--shadow-sm);
 }
+
 .search-input-wrap input:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-glow);
 }
+
 .search-input-wrap .search-icon {
   position: absolute;
   left: 0.85rem;
@@ -711,6 +721,7 @@ body {
   cursor: pointer;
   box-shadow: var(--shadow-sm);
 }
+
 .select-custom:focus {
   border-color: var(--primary);
 }
@@ -722,7 +733,8 @@ body {
   gap: 1.25rem;
 }
 
-.faculty-card, .venue-card {
+.faculty-card,
+.venue-card {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -806,6 +818,7 @@ body {
   cursor: pointer;
   transition: all var(--transition-fast);
 }
+
 .week-nav-arrow:hover {
   background: #e2e8f0;
   border-color: #94a3b8;
@@ -840,6 +853,7 @@ body {
   transition: border-color var(--transition-fast);
   font-family: inherit;
 }
+
 .week-date-picker:focus {
   outline: none;
   border-color: var(--primary);
@@ -902,8 +916,15 @@ body {
 }
 
 @keyframes weekHistorySlideIn {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .week-history-header {
@@ -933,10 +954,12 @@ body {
   transition: all var(--transition-fast);
   gap: 0.75rem;
 }
+
 .week-history-item:hover {
   background: #f1f5f9;
   border-color: var(--border-color);
 }
+
 .week-history-item.active {
   background: #eff6ff;
   border-color: #bfdbfe;
@@ -1160,8 +1183,15 @@ body {
 }
 
 @keyframes modalIn {
-  from { opacity: 0; transform: scale(0.97) translateY(8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .modal-header {
@@ -1247,13 +1277,28 @@ body {
 }
 
 @keyframes toastIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.toast-success { border-left: 4px solid var(--accent-emerald); }
-.toast-warning { border-left: 4px solid var(--accent-amber); }
-.toast-danger  { border-left: 4px solid var(--accent-rose); }
+.toast-success {
+  border-left: 4px solid var(--accent-emerald);
+}
+
+.toast-warning {
+  border-left: 4px solid var(--accent-amber);
+}
+
+.toast-danger {
+  border-left: 4px solid var(--accent-rose);
+}
 
 /* ══════════════════════════════════════════════════════════════════════ */
 /* Timetable Selection Screen (Step 1)                                  */
@@ -1320,6 +1365,7 @@ body {
   box-shadow: var(--shadow-sm);
   transition: box-shadow var(--transition-fast);
 }
+
 .tt-select-card:hover {
   box-shadow: var(--shadow-md);
 }
@@ -1351,10 +1397,12 @@ body {
   transition: all var(--transition-fast);
   font-family: inherit;
 }
+
 .tt-select-pill:hover {
   background: #e2e8f0;
   border-color: #94a3b8;
 }
+
 .tt-select-pill.active {
   background: #2563eb;
   color: #ffffff;
@@ -1380,6 +1428,7 @@ body {
   font-family: inherit;
   transition: border-color var(--transition-fast);
 }
+
 .tt-select-date-input:focus {
   outline: none;
   border-color: var(--primary);
@@ -1404,10 +1453,12 @@ body {
   box-shadow: 0 4px 14px rgba(37, 99, 235, 0.2);
   transition: all var(--transition-fast);
 }
+
 .tt-select-proceed-btn:hover:not(:disabled) {
   box-shadow: 0 6px 20px rgba(37, 99, 235, 0.3);
   transform: translateY(-1px);
 }
+
 .tt-select-proceed-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1446,14 +1497,14 @@ body {
 }
 
 .eca-matrix th.vertical-day-col {
-  background: #0f172a;
+  background: #1e40af;
   color: #ffffff;
   min-width: 145px;
   font-weight: 800;
   letter-spacing: 0.6px;
   text-align: center;
   font-size: 0.82rem;
-  border-color: #0f172a;
+  border-color: #1e40af;
 }
 
 .eca-matrix td {
@@ -1500,6 +1551,7 @@ body {
   background: transparent;
   font-family: inherit;
 }
+
 .eca-cell-btn:hover {
   border-color: #2563eb;
   background: #eff6ff;
@@ -1724,6 +1776,7 @@ body {
   transition: all var(--transition-fast);
   font-family: inherit;
 }
+
 .login-role-tab.active {
   background: #ffffff;
   color: #2563eb;
@@ -1761,11 +1814,13 @@ body {
   transition: all var(--transition-fast);
   font-family: inherit;
 }
+
 .login-demo-chip:hover {
   background: #eff6ff;
   border-color: #93c5fd;
   color: #2563eb;
 }
+
 .login-demo-chip.selected {
   background: #dbeafe;
   border-color: #3b82f6;
@@ -1805,12 +1860,14 @@ body {
   font-family: inherit;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
+
 .google-auth-btn:hover:not(:disabled) {
   background: #f8fafc;
   border-color: #94a3b8;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
 }
+
 .google-auth-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -1826,12 +1883,14 @@ body {
   letter-spacing: 0.5px;
   margin: 0.25rem 0;
 }
+
 .login-divider::before,
 .login-divider::after {
   content: '';
   flex: 1;
   border-bottom: 1px solid var(--border-color);
 }
+
 .login-divider span {
   padding: 0 0.75rem;
 }
@@ -1893,6 +1952,7 @@ body {
   justify-content: center;
   padding: 4px;
 }
+
 .login-password-toggle:hover {
   color: #0f172a;
 }
@@ -1903,6 +1963,7 @@ body {
   color: #2563eb;
   text-decoration: none;
 }
+
 .login-forgot-link:hover {
   text-decoration: underline;
 }
@@ -1934,6 +1995,7 @@ body {
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
   margin-top: 0.5rem;
 }
+
 .login-submit-btn:hover {
   box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
   transform: translateY(-1px);
@@ -1950,7 +2012,147 @@ body {
   .login-wrapper {
     flex-direction: column;
   }
+
   .login-hero-panel {
     display: none;
+  }
+}
+
+/* ================= PROFESSIONAL PRINT ENGINE ================= */
+.print-only-header {
+  display: none;
+}
+
+@media print {
+
+  /* 1. Hide non-printable app UI elements */
+  .sidebar,
+  .top-header,
+  .section-header,
+  .btn,
+  .toast-container,
+  .no-print,
+  button,
+  select,
+  input {
+    display: none !important;
+  }
+
+  /* 2. Reset full viewport containers for clean document printing */
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 8pt !important;
+    width: 100% !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  .main-content,
+  .page-body {
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+  }
+
+  /* 3. Institution Print Header Banner */
+  .print-only-header {
+    display: block !important;
+    text-align: center;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+    border-bottom: 1.5px solid #0f172a;
+  }
+
+  .print-only-header h2 {
+    font-size: 1.25rem !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+    margin: 0 0 2px 0 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .print-only-header p {
+    font-size: 0.78rem !important;
+    color: #475569 !important;
+    margin: 0 !important;
+    font-weight: 600 !important;
+  }
+
+  /* 4. Timetable Scale & Auto-fit to 1 Single Page */
+  .printable-timetable-area,
+  .timetable-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    transform: scale(0.86);
+    transform-origin: top center;
+    margin-top: -10px !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  div[style*="overflowX"],
+  div[style*="overflow-x"] {
+    overflow: visible !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  div[style*="minWidth: 1450px"],
+  div[style*="min-width: 1450px"] {
+    min-width: 100% !important;
+    width: 100% !important;
+    display: flex !important;
+    gap: 0.35rem !important;
+  }
+
+  /* Compact day column card formatting */
+  div[style*="minWidth: 235px"],
+  div[style*="min-width: 235px"] {
+    min-width: 0 !important;
+    flex: 1 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    border-radius: 8px !important;
+  }
+
+  /* Compact timing column & slot text padding for single-page print */
+  div[style*="padding: 0.45rem 0.55rem"],
+  div[style*="padding: 0.5rem 0.3rem"],
+  div[style*="padding: 0.45rem 0.5rem"] {
+    padding: 0.22rem 0.3rem !important;
+  }
+
+  div[style*="padding: 0.9rem 0.75rem"] {
+    padding: 0.4rem 0.5rem !important;
+  }
+
+  /* Hide quick edit and trash buttons on print */
+  button[title="Edit slot"],
+  button[title="Delete slot"] {
+    display: none !important;
+  }
+
+  /* Force 1 single page landscape layout */
+  @page {
+    size: landscape;
+    margin: 0.15in;
   }
 }

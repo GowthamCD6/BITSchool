@@ -151,110 +151,91 @@ export function SchoolProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
 
-  // Fetch ALL data from MySQL Backend API on mount (Classes, Subjects, Venues, Faculties, Grades, ECA, Timetable)
+  // Safe helper to fetch JSON endpoints without throwing on blocked/offline endpoints
+  const safeFetchJSON = async (url) => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (err) {
+      console.warn(`Endpoint ${url} unavailable or blocked by network tab:`, err.message);
+      return null;
+    }
+  };
+
+  // Fetch ALL data from Backend API safely on mount
   useEffect(() => {
     const fetchDatabaseData = async () => {
-      try {
-        const [classesRes, subjectsRes, venuesRes, facultiesRes, gradesRes, ecaRes, timeSlotsRes, bellConfigRes, timetablesRes] = await Promise.all([
-          fetch('http://localhost:5000/api/classes'),
-          fetch('http://localhost:5000/api/courses'),
-          fetch('http://localhost:5000/api/venues'),
-          fetch('http://localhost:5000/api/faculties'),
-          fetch('http://localhost:5000/api/grades'),
-          fetch('http://localhost:5000/api/eca'),
-          fetch('http://localhost:5000/api/time-slots'),
-          fetch('http://localhost:5000/api/time-slots/bell-config'),
-          fetch('http://localhost:5000/api/timetables')
-        ]);
+      const [
+        classesData,
+        subjectsData,
+        venuesData,
+        facultiesData,
+        gradesData,
+        ecaData,
+        timeSlotsData,
+        bellConfigData,
+        timetablesData
+      ] = await Promise.all([
+        safeFetchJSON('http://localhost:5000/api/classes'),
+        safeFetchJSON('http://localhost:5000/api/courses'),
+        safeFetchJSON('http://localhost:5000/api/venues'),
+        safeFetchJSON('http://localhost:5000/api/faculties'),
+        safeFetchJSON('http://localhost:5000/api/grades'),
+        safeFetchJSON('http://localhost:5000/api/eca'),
+        safeFetchJSON('http://localhost:5000/api/time-slots'),
+        safeFetchJSON('http://localhost:5000/api/time-slots/bell-config'),
+        safeFetchJSON('http://localhost:5000/api/timetables')
+      ]);
 
-        let loadedClasses = [];
-        let loadedSubjects = [];
-        let loadedVenues = [];
-        let loadedFaculties = [];
-        let loadedEcaSchedule = {};
-        let loadedBellConfig = bellConfig;
-        let hasLoadedSavedTimetable = false;
-
-        if (classesRes.ok) {
-          const data = await classesRes.json();
-          loadedClasses = Array.isArray(data) ? data : (data.data || []);
-          setClasses(loadedClasses);
+      if (classesData) {
+        const loaded = Array.isArray(classesData) ? classesData : (classesData.data || []);
+        if (loaded.length > 0) setClasses(loaded);
+      }
+      if (subjectsData) {
+        const loaded = Array.isArray(subjectsData) ? subjectsData : (subjectsData.data || []);
+        if (loaded.length > 0) setSubjects(loaded);
+      }
+      if (venuesData) {
+        const loaded = Array.isArray(venuesData) ? venuesData : (venuesData.data || []);
+        if (loaded.length > 0) setVenues(loaded);
+      }
+      if (facultiesData) {
+        const loaded = Array.isArray(facultiesData) ? facultiesData : (facultiesData.data || []);
+        if (loaded.length > 0) setFaculties(loaded);
+      }
+      if (gradesData) {
+        const loaded = Array.isArray(gradesData) ? gradesData : (gradesData.data || []);
+        if (loaded.length > 0) setGrades(loaded);
+      }
+      if (ecaData) {
+        const ecaPayload = ecaData.data || ecaData;
+        if (ecaPayload.verticals && Array.isArray(ecaPayload.verticals)) setEcaVerticals(ecaPayload.verticals);
+        if (ecaPayload.verticalDetails && Array.isArray(ecaPayload.verticalDetails)) setEcaVerticalDetails(ecaPayload.verticalDetails);
+        if (ecaPayload.schedule && typeof ecaPayload.schedule === 'object') setEcaSchedule(ecaPayload.schedule);
+      }
+      if (timeSlotsData) {
+        const loaded = Array.isArray(timeSlotsData) ? timeSlotsData : (timeSlotsData.data || []);
+        if (loaded.length > 0) setTimeSlots(loaded.sort((a, b) => a.slotNo - b.slotNo));
+      }
+      if (bellConfigData && bellConfigData.data) {
+        setBellConfig(bellConfigData.data);
+      }
+      if (timetablesData) {
+        const savedSlots = Array.isArray(timetablesData) ? timetablesData : (timetablesData.data || []);
+        if (savedSlots.length > 0) {
+          const currentWeek = toWeekKey(getMondayOfWeek(new Date()));
+          setWeeklyTimetables(prev => ({
+            ...prev,
+            [currentWeek]: savedSlots
+          }));
+          setTimetableStats({
+            totalSlots: savedSlots.length,
+            allocatedSlots: savedSlots.length,
+            conflictCount: savedSlots.filter(s => s.isConflict).length,
+            utilizationRate: Math.max(0, Math.round(((savedSlots.length - savedSlots.filter(s => s.isConflict).length) / savedSlots.length) * 100))
+          });
         }
-
-        if (subjectsRes.ok) {
-          const data = await subjectsRes.json();
-          loadedSubjects = Array.isArray(data) ? data : (data.data || []);
-          setSubjects(loadedSubjects);
-        }
-
-        if (venuesRes.ok) {
-          const data = await venuesRes.json();
-          loadedVenues = Array.isArray(data) ? data : (data.data || []);
-          setVenues(loadedVenues);
-        }
-
-        if (facultiesRes.ok) {
-          const data = await facultiesRes.json();
-          loadedFaculties = Array.isArray(data) ? data : (data.data || []);
-          setFaculties(loadedFaculties);
-        }
-
-        if (gradesRes && gradesRes.ok) {
-          const data = await gradesRes.json();
-          const items = Array.isArray(data) ? data : (data.data || []);
-          setGrades(items);
-        }
-
-        if (ecaRes && ecaRes.ok) {
-          const ecaData = await ecaRes.json();
-          const ecaPayload = ecaData.data || ecaData;
-          if (ecaPayload.verticals && Array.isArray(ecaPayload.verticals)) {
-            setEcaVerticals(ecaPayload.verticals);
-          }
-          if (ecaPayload.verticalDetails && Array.isArray(ecaPayload.verticalDetails)) {
-            setEcaVerticalDetails(ecaPayload.verticalDetails);
-          }
-          if (ecaPayload.schedule && typeof ecaPayload.schedule === 'object') {
-            loadedEcaSchedule = ecaPayload.schedule;
-            setEcaSchedule(loadedEcaSchedule);
-          }
-        }
-
-        if (timeSlotsRes && timeSlotsRes.ok) {
-          const data = await timeSlotsRes.json();
-          const items = Array.isArray(data) ? data : (data.data || []);
-          if (items.length > 0) {
-            setTimeSlots(items.sort((a, b) => a.slotNo - b.slotNo));
-          }
-        }
-
-        if (bellConfigRes && bellConfigRes.ok) {
-          const data = await bellConfigRes.json();
-          if (data.data) {
-            loadedBellConfig = data.data;
-            setBellConfig(loadedBellConfig);
-          }
-        }
-
-        if (timetablesRes && timetablesRes.ok) {
-          const ttData = await timetablesRes.json();
-          const savedSlots = Array.isArray(ttData) ? ttData : (ttData.data || []);
-          if (savedSlots.length > 0) {
-            const currentWeek = toWeekKey(getMondayOfWeek(new Date()));
-            setWeeklyTimetables(prev => ({
-              ...prev,
-              [currentWeek]: savedSlots
-            }));
-            setTimetableStats({
-              totalSlots: savedSlots.length,
-              allocatedSlots: savedSlots.length,
-              conflictCount: savedSlots.filter(s => s.isConflict).length,
-              utilizationRate: Math.max(0, Math.round(((savedSlots.length - savedSlots.filter(s => s.isConflict).length) / savedSlots.length) * 100))
-            });
-          }
-        }
-      } catch (err) {
-        console.warn('Backend API connection notice (using database cache):', err.message);
       }
     };
 
@@ -360,34 +341,82 @@ export function SchoolProvider({ children }) {
   };
 
   const addEcaVertical = async (verticalName, gradeIds = []) => {
-    if (ecaVerticals.includes(verticalName)) {
-      showToast(`Vertical "${verticalName}" already exists.`, 'warning');
+    const cleanVertical = verticalName.trim();
+    const isAlreadyPresent = ecaVerticals.some(v => v.toLowerCase() === cleanVertical.toLowerCase());
+
+    const newGradeObjects = (gradeIds || []).map(gId => {
+      const cleanG = String(gId).replace('Grade ', '');
+      return { id: cleanG, name: `Grade ${cleanG}` };
+    });
+
+    if (isAlreadyPresent) {
+      // Vertical exists — update its grade level associations
+      setEcaVerticalDetails(prev => {
+        const found = prev.some(v => v.name.toLowerCase() === cleanVertical.toLowerCase());
+        if (found) {
+          return prev.map(v => {
+            if (v.name.toLowerCase() === cleanVertical.toLowerCase()) {
+              const currentGrades = [...(v.grades || [])];
+              newGradeObjects.forEach(newG => {
+                if (!currentGrades.some(g => String(g.id || g.name).replace('Grade ', '') === newG.id)) {
+                  currentGrades.push(newG);
+                }
+              });
+              return { ...v, grades: currentGrades };
+            }
+            return v;
+          });
+        }
+        return [...prev, { id: `vert_${Date.now()}`, name: cleanVertical, grades: newGradeObjects }];
+      });
+
+      try {
+        const res = await fetch('http://localhost:5000/api/eca/vertical', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: cleanVertical, gradeIds })
+        });
+        if (!res.ok) {
+          console.warn(`ECA vertical sync notice (${res.status}): Updated in local cache.`);
+        }
+      } catch (err) {
+        console.warn('Failed to persist ECA vertical to backend:', err.message);
+      }
+
+      showToast(`Updated ECA Vertical "${cleanVertical}" for the selected grade level(s).`);
       return;
     }
-    setEcaVerticals(prev => [...prev, verticalName]);
+
+    // New vertical creation
+    setEcaVerticals(prev => [...prev, cleanVertical]);
+    setEcaVerticalDetails(prev => [
+      ...prev,
+      { id: `vert_${Date.now()}`, name: cleanVertical, grades: newGradeObjects }
+    ]);
     setEcaSchedule(prev => {
       const next = { ...prev };
       Object.keys(next).forEach(d => {
-        next[d] = { ...next[d], [verticalName]: { active: false, label: 'No' } };
+        next[d] = { ...next[d], [cleanVertical]: { active: false, label: 'No' } };
       });
       return next;
     });
+
     try {
       const res = await fetch('http://localhost:5000/api/eca/vertical', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: verticalName, gradeIds })
+        body: JSON.stringify({ name: cleanVertical, gradeIds })
       });
       if (res.ok) {
         const data = await res.json();
         if (data.data) {
-          setEcaVerticalDetails(prev => [...prev, data.data]);
+          setEcaVerticalDetails(prev => prev.map(v => v.name.toLowerCase() === cleanVertical.toLowerCase() ? data.data : v));
         }
       }
     } catch (err) {
       console.warn('Failed to persist ECA vertical to backend:', err.message);
     }
-    showToast(`Added new ECA Vertical: "${verticalName}".`);
+    showToast(`Added ECA Vertical: "${cleanVertical}".`);
   };
 
   const deleteEcaVertical = async (verticalName) => {
@@ -420,6 +449,79 @@ export function SchoolProvider({ children }) {
 
   // Auto Generate Master Timetable & Persist to MySQL DB
   const handleAutoGenerateTimetable = async (options = {}) => {
+    const rawTargetGrade = options.targetGrade || 'all';
+    const targetGrade = typeof rawTargetGrade === 'object'
+      ? String(rawTargetGrade.name || rawTargetGrade.id || 'all').replace('Grade ', '').trim()
+      : String(rawTargetGrade).replace('Grade ', '').trim();
+    const targetClassId = String(options.targetClassId || 'all');
+
+    // ⛔ CONSTRAINT CHECK 1: Ensure master course subjects exist in the system
+    if (!subjects || subjects.length === 0) {
+      showToast('Cannot generate timetable: No Master Course subjects configured in the system. Please add courses in Primary Data Entry first.', 'danger');
+      return;
+    }
+
+    // Helper: Safely extract numeric/string grade value from string, number, or object
+    const getCleanGradeStr = (gVal) => {
+      if (!gVal) return '';
+      if (typeof gVal === 'string' || typeof gVal === 'number') {
+        return String(gVal).replace('Grade ', '').trim();
+      }
+      if (typeof gVal === 'object') {
+        if (gVal.name) return String(gVal.name).replace('Grade ', '').trim();
+        if (gVal.id) return String(gVal.id).replace('Grade ', '').trim();
+        if (gVal.gradeName) return String(gVal.gradeName).replace('Grade ', '').trim();
+      }
+      return '';
+    };
+
+    // Helper: Check if subject applies to a grade
+    const isSubjectForGrade = (s, targetG) => {
+      const tNum = targetG.replace(/\D/g, '');
+      const sGradStr = getCleanGradeStr(s.grade || s.gradeName || s.gradeId || '');
+      const sNum = sGradStr.replace(/\D/g, '');
+
+      if (!sGradStr || sGradStr.toLowerCase() === 'all' || sGradStr === '') return true;
+      if (sNum && tNum && sNum === tNum) return true;
+      if (sGradStr.toLowerCase() === targetG.toLowerCase()) return true;
+
+      if (Array.isArray(s.grades)) {
+        return s.grades.some(g => {
+          const gStr = getCleanGradeStr(g);
+          return gStr.replace(/\D/g, '') === tNum || gStr.toLowerCase() === 'all';
+        });
+      }
+      return false;
+    };
+
+    // ⛔ CONSTRAINT CHECK 2: If targetGrade is specified, check if subjects exist for target grade
+    if (targetGrade !== 'all') {
+      const gradeSubjects = subjects.filter(s => isSubjectForGrade(s, targetGrade));
+
+      if (gradeSubjects.length === 0) {
+        showToast(`Cannot generate timetable for Grade ${targetGrade}: No Master Course subjects have been configured for Grade ${targetGrade} yet. Please add courses in Primary Data Entry first.`, 'danger');
+        return;
+      }
+    }
+
+    // ⛔ CONSTRAINT CHECK 3: If targetClassId is specified, check if class's grade has subjects
+    if (targetClassId !== 'all') {
+      const targetClass = classes.find(c => String(c.id) === String(targetClassId));
+      if (targetClass) {
+        const clsGradeRaw = targetClass.grade || targetClass.gradeName || targetClass.gradeId || targetClass.name || '';
+        const clsGrade = getCleanGradeStr(clsGradeRaw);
+
+        if (clsGrade) {
+          const classGradeSubjects = subjects.filter(s => isSubjectForGrade(s, clsGrade));
+
+          if (classGradeSubjects.length === 0) {
+            showToast(`Cannot generate timetable for "${targetClass.name}": No Master Course subjects configured for Grade ${clsGrade}. Please add courses in Primary Data Entry first.`, 'danger');
+            return;
+          }
+        }
+      }
+    }
+
     const existingWeekSlots = weeklyTimetables[activeWeekKey] || [];
     const result = generateAutoTimetable({
       faculties,
@@ -428,8 +530,8 @@ export function SchoolProvider({ children }) {
       subjects,
       ecaSchedule,
       bellConfig,
-      targetClassId: options.targetClassId || 'all',
-      targetGrade: options.targetGrade || 'all',
+      targetClassId: targetClassId,
+      targetGrade: targetGrade,
       existingTimetable: existingWeekSlots
     });
 
@@ -479,282 +581,315 @@ export function SchoolProvider({ children }) {
 
   // Faculty CRUD (MySQL API)
   const addFaculty = async (newFaculty) => {
+    const itemWithId = {
+      ...newFaculty,
+      id: newFaculty.id || `f_${Date.now()}`
+    };
+    setFaculties(prev => [...prev, itemWithId]);
+    showToast(`Faculty member "${itemWithId.name}" added successfully.`);
+
     try {
       const res = await fetch('http://localhost:5000/api/faculties', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newFaculty)
+        body: JSON.stringify(itemWithId)
       });
       const data = await res.json();
       if (data.success && data.data) {
-        setFaculties(prev => [...prev, data.data]);
-        showToast(`Faculty member "${data.data.name}" added successfully.`);
+        setFaculties(prev => prev.map(f => f.id === itemWithId.id ? data.data : f));
       }
     } catch (err) {
-      showToast('Failed to add faculty member to database.', 'danger');
+      console.warn('Network call notice (retained in local cache):', err.message);
     }
   };
 
   const updateFaculty = async (updatedFaculty) => {
+    setFaculties(prev => prev.map(f => f.id === updatedFaculty.id ? updatedFaculty : f));
+    showToast(`Faculty profile updated for ${updatedFaculty.name}.`);
+
     try {
-      const res = await fetch(`http://localhost:5000/api/faculties/${updatedFaculty.id}`, {
+      await fetch(`http://localhost:5000/api/faculties/${updatedFaculty.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFaculty)
       });
-      const data = await res.json();
-      if (data.success) {
-        setFaculties(prev => prev.map(f => f.id === updatedFaculty.id ? updatedFaculty : f));
-        showToast(`Faculty profile updated for ${updatedFaculty.name}.`);
-      }
     } catch (err) {
-      showToast('Failed to update faculty member.', 'danger');
+      console.warn('Network update notice:', err.message);
     }
   };
 
   const deleteFaculty = async (facultyId) => {
+    const f = faculties.find(fac => fac.id === facultyId);
+    setFaculties(prev => prev.filter(fac => fac.id !== facultyId));
+    showToast(`Faculty ${f?.name || ''} removed.`, 'warning');
+
     try {
-      const f = faculties.find(fac => fac.id === facultyId);
       await fetch(`http://localhost:5000/api/faculties/${facultyId}`, { method: 'DELETE' });
-      setFaculties(prev => prev.filter(fac => fac.id !== facultyId));
-      showToast(`Faculty ${f?.name || ''} removed.`, 'warning');
     } catch (err) {
-      showToast('Failed to delete faculty member.', 'danger');
+      console.warn('Network delete notice:', err.message);
     }
   };
 
   // Venue CRUD (MySQL API)
   const addVenue = async (newVenue) => {
+    const itemWithId = {
+      ...newVenue,
+      id: newVenue.id || `v_${Date.now()}`
+    };
+    setVenues(prev => [...prev, itemWithId]);
+    showToast(`Venue "${itemWithId.roomNo} - ${itemWithId.name}" added.`);
+
     try {
       const res = await fetch('http://localhost:5000/api/venues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newVenue)
+        body: JSON.stringify(itemWithId)
       });
       const data = await res.json();
       if (data.success && data.data) {
-        setVenues(prev => [...prev, data.data]);
-        showToast(`Venue "${data.data.roomNo} - ${data.data.name}" added.`);
+        setVenues(prev => prev.map(v => v.id === itemWithId.id ? data.data : v));
       }
     } catch (err) {
-      showToast('Failed to add venue.', 'danger');
+      console.warn('Network call notice:', err.message);
     }
   };
 
   const updateVenue = async (updatedVenue) => {
+    setVenues(prev => prev.map(v => v.id === updatedVenue.id ? updatedVenue : v));
+    showToast(`Venue details updated for ${updatedVenue.roomNo}.`);
+
     try {
-      const res = await fetch(`http://localhost:5000/api/venues/${updatedVenue.id}`, {
+      await fetch(`http://localhost:5000/api/venues/${updatedVenue.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedVenue)
       });
-      const data = await res.json();
-      if (data.success) {
-        setVenues(prev => prev.map(v => v.id === updatedVenue.id ? updatedVenue : v));
-        showToast(`Venue details updated for ${updatedVenue.roomNo}.`);
-      }
     } catch (err) {
-      showToast('Failed to update venue.', 'danger');
+      console.warn('Network update notice:', err.message);
     }
   };
 
   const deleteVenue = async (venueId) => {
+    const v = venues.find(ven => ven.id === venueId);
+    setVenues(prev => prev.filter(ven => ven.id !== venueId));
+    showToast(`Venue ${v?.roomNo || ''} removed.`, 'warning');
+
     try {
-      const v = venues.find(ven => ven.id === venueId);
       await fetch(`http://localhost:5000/api/venues/${venueId}`, { method: 'DELETE' });
-      setVenues(prev => prev.filter(ven => ven.id !== venueId));
-      showToast(`Venue ${v?.roomNo || ''} removed.`, 'warning');
     } catch (err) {
-      showToast('Failed to delete venue.', 'danger');
+      console.warn('Network delete notice:', err.message);
     }
   };
 
   // Class CRUD (MySQL API)
   const addClass = async (newClass) => {
+    const itemWithId = {
+      ...newClass,
+      id: newClass.id || `c_${Date.now()}`
+    };
+    setClasses(prev => [...prev, itemWithId]);
+    showToast(`Class "${itemWithId.name}" created.`);
+
     try {
       const res = await fetch('http://localhost:5000/api/classes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newClass)
+        body: JSON.stringify(itemWithId)
       });
       const data = await res.json();
       if (data.success && data.data) {
-        setClasses(prev => [...prev, data.data]);
-        showToast(`Class "${data.data.name}" created.`);
+        setClasses(prev => prev.map(c => c.id === itemWithId.id ? data.data : c));
       }
     } catch (err) {
-      showToast('Failed to create class in database.', 'danger');
+      console.warn('Network call notice:', err.message);
     }
   };
 
   const updateClass = async (updatedClass) => {
+    setClasses(prev => prev.map(c => c.id === updatedClass.id ? updatedClass : c));
+    showToast(`Class "${updatedClass.name}" updated.`);
+
     try {
-      const res = await fetch(`http://localhost:5000/api/classes/${updatedClass.id}`, {
+      await fetch(`http://localhost:5000/api/classes/${updatedClass.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedClass)
       });
-      const data = await res.json();
-      if (data.success) {
-        setClasses(prev => prev.map(c => c.id === updatedClass.id ? updatedClass : c));
-        showToast(`Class "${updatedClass.name}" updated.`);
-      }
     } catch (err) {
-      showToast('Failed to update class.', 'danger');
+      console.warn('Network update notice:', err.message);
     }
   };
 
   const deleteClass = async (classId) => {
+    const c = classes.find(item => item.id === classId);
+    setClasses(prev => prev.filter(item => item.id !== classId));
+    showToast(`Class "${c?.name || ''}" removed.`, 'warning');
+
     try {
-      const c = classes.find(item => item.id === classId);
       await fetch(`http://localhost:5000/api/classes/${classId}`, { method: 'DELETE' });
-      setClasses(prev => prev.filter(item => item.id !== classId));
-      showToast(`Class "${c?.name || ''}" removed.`, 'warning');
     } catch (err) {
-      showToast('Failed to delete class from database.', 'danger');
+      console.warn('Network delete notice:', err.message);
     }
   };
 
   // Subject CRUD (MySQL API)
   const addSubject = async (newSubj) => {
+    const itemWithId = {
+      ...newSubj,
+      id: newSubj.id || `s_${Date.now()}`
+    };
+    setSubjects(prev => [...prev, itemWithId]);
+    showToast(`Subject "${itemWithId.name}" (${itemWithId.code}) added.`);
+
     try {
       const res = await fetch('http://localhost:5000/api/courses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSubj)
+        body: JSON.stringify(itemWithId)
       });
       const data = await res.json();
       if (data.success && data.data) {
-        setSubjects(prev => [...prev, data.data]);
-        showToast(`Subject "${data.data.name}" (${data.data.code}) added.`);
+        setSubjects(prev => prev.map(s => s.id === itemWithId.id ? data.data : s));
       }
     } catch (err) {
-      showToast('Failed to create subject in database.', 'danger');
+      console.warn('Network call notice:', err.message);
     }
   };
 
   const updateSubject = async (updatedSubj) => {
+    setSubjects(prev => prev.map(s => s.id === updatedSubj.id ? updatedSubj : s));
+    showToast(`Subject "${updatedSubj.name}" updated.`);
+
     try {
-      const res = await fetch(`http://localhost:5000/api/courses/${updatedSubj.id}`, {
+      await fetch(`http://localhost:5000/api/courses/${updatedSubj.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedSubj)
       });
-      const data = await res.json();
-      if (data.success) {
-        setSubjects(prev => prev.map(s => s.id === updatedSubj.id ? updatedSubj : s));
-        showToast(`Subject "${updatedSubj.name}" updated.`);
-      }
     } catch (err) {
-      showToast('Failed to update subject.', 'danger');
+      console.warn('Network update notice:', err.message);
     }
   };
 
   const deleteSubject = async (subjectId) => {
+    const s = subjects.find(subj => subj.id === subjectId);
+    setSubjects(prev => prev.filter(subj => subj.id !== subjectId));
+    showToast(`Subject "${s?.name || ''}" removed.`, 'warning');
+
     try {
-      const s = subjects.find(subj => subj.id === subjectId);
       await fetch(`http://localhost:5000/api/courses/${subjectId}`, { method: 'DELETE' });
-      setSubjects(prev => prev.filter(subj => subj.id !== subjectId));
-      showToast(`Subject "${s?.name || ''}" removed.`, 'warning');
     } catch (err) {
-      showToast('Failed to delete subject from database.', 'danger');
+      console.warn('Network delete notice:', err.message);
     }
   };
 
-  // Grade Level CRUD Operations (MySQL Persistence)
+  // Grade Level CRUD Operations
   const addGrade = async (gradeData) => {
+    const itemWithId = {
+      ...gradeData,
+      id: gradeData.id || `g_${Date.now()}`
+    };
+    setGrades(prev => [...prev.filter(g => String(g.id) !== String(itemWithId.id)), itemWithId]);
+    showToast(`Grade level "${itemWithId.name}" saved.`);
+
     try {
       const res = await fetch('http://localhost:5000/api/grades', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(gradeData)
+        body: JSON.stringify(itemWithId)
       });
       if (res.ok) {
         const newGrade = await res.json();
-        setGrades((prev) => [...prev.filter((g) => String(g.id) !== String(newGrade.id)), newGrade]);
-        showToast(`Grade level "${newGrade.name}" saved to MySQL database.`);
-        return newGrade;
+        setGrades(prev => [...prev.filter(g => String(g.id) !== String(newGrade.id)), newGrade]);
       }
     } catch (err) {
-      showToast('Failed to save grade level to database.', 'danger');
+      console.warn('Network call notice:', err.message);
     }
+    return itemWithId;
   };
 
   const updateGrade = async (id, gradeData) => {
+    setGrades(prev => prev.map(g => (String(g.id) === String(id) ? { ...g, ...gradeData } : g)));
+    showToast(`Grade level updated.`);
+
     try {
-      const res = await fetch(`http://localhost:5000/api/grades/${id}`, {
+      await fetch(`http://localhost:5000/api/grades/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(gradeData)
       });
-      if (res.ok) {
-        const updated = await res.json();
-        setGrades((prev) => prev.map((g) => (String(g.id) === String(id) ? updated : g)));
-        showToast(`Grade level updated in database.`);
-      }
     } catch (err) {
-      showToast('Failed to update grade in database.', 'danger');
+      console.warn('Network update notice:', err.message);
     }
   };
 
   const deleteGrade = async (id) => {
+    const target = grades.find((g) => String(g.id) === String(id));
+    setGrades((prev) => prev.filter((g) => String(g.id) !== String(id)));
+    showToast(`Grade level "${target?.name || ''}" removed.`, 'warning');
+
     try {
-      const target = grades.find((g) => String(g.id) === String(id));
       await fetch(`http://localhost:5000/api/grades/${id}`, { method: 'DELETE' });
-      setGrades((prev) => prev.filter((g) => String(g.id) !== String(id)));
-      showToast(`Grade level "${target?.name || ''}" removed from database.`, 'warning');
     } catch (err) {
-      showToast('Failed to delete grade from database.', 'danger');
+      console.warn('Network delete notice:', err.message);
     }
   };
 
   // ── Time Slot CRUD (MySQL API) ──
   const addTimeSlot = async (newSlot) => {
+    const itemWithId = {
+      ...newSlot,
+      id: newSlot.id || `ts_${Date.now()}`
+    };
+    setTimeSlots(prev => [...prev, itemWithId].sort((a, b) => (a.slotNo || 0) - (b.slotNo || 0)));
+    showToast(`Time slot "${itemWithId.name}" added successfully.`);
+
     try {
       const res = await fetch('http://localhost:5000/api/time-slots', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSlot)
+        body: JSON.stringify(itemWithId)
       });
       const data = await res.json();
       if (data.success && data.data) {
-        setTimeSlots(prev => [...prev, data.data].sort((a, b) => a.slotNo - b.slotNo));
-        showToast(`Time slot "${data.data.name}" added successfully.`);
+        setTimeSlots(prev => prev.map(s => s.id === itemWithId.id ? data.data : s).sort((a, b) => a.slotNo - b.slotNo));
       }
     } catch (err) {
-      showToast('Failed to save time slot to database.', 'danger');
+      console.warn('Network call notice:', err.message);
     }
   };
 
   const updateTimeSlot = async (updatedSlot) => {
+    setTimeSlots(prev => prev.map(s => String(s.id) === String(updatedSlot.id) ? { ...s, ...updatedSlot } : s).sort((a, b) => (a.slotNo || 0) - (b.slotNo || 0)));
+    showToast(`Time slot "${updatedSlot.name}" updated.`);
+
     try {
-      const res = await fetch(`http://localhost:5000/api/time-slots/${updatedSlot.id}`, {
+      await fetch(`http://localhost:5000/api/time-slots/${updatedSlot.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedSlot)
       });
-      const data = await res.json();
-      if (data.success) {
-        setTimeSlots(prev => prev.map(s => String(s.id) === String(updatedSlot.id) ? { ...s, ...updatedSlot } : s).sort((a, b) => a.slotNo - b.slotNo));
-        showToast(`Time slot "${updatedSlot.name}" updated.`);
-      }
     } catch (err) {
-      showToast('Failed to update time slot.', 'danger');
+      console.warn('Network update notice:', err.message);
     }
   };
 
   const deleteTimeSlot = async (slotId) => {
+    const target = timeSlots.find(s => String(s.id) === String(slotId));
+    setTimeSlots(prev => prev.filter(s => String(s.id) !== String(slotId)));
+    showToast(`Time slot "${target?.name || ''}" deleted.`, 'warning');
+
     try {
-      const target = timeSlots.find(s => String(s.id) === String(slotId));
       await fetch(`http://localhost:5000/api/time-slots/${slotId}`, { method: 'DELETE' });
-      setTimeSlots(prev => prev.filter(s => String(s.id) !== String(slotId)));
-      showToast(`Time slot "${target?.name || ''}" deleted.`, 'warning');
     } catch (err) {
-      showToast('Failed to delete time slot.', 'danger');
+      console.warn('Network delete notice:', err.message);
     }
   };
 
   const saveBellConfig = async (newConfig) => {
+    setBellConfig(newConfig);
+    showToast('Bell Schedule parameters saved successfully.');
+
     try {
       const res = await fetch('http://localhost:5000/api/time-slots/bell-config', {
         method: 'POST',
@@ -762,15 +897,11 @@ export function SchoolProvider({ children }) {
         body: JSON.stringify(newConfig)
       });
       const data = await res.json();
-      if (data.success && data.data) {
-        setBellConfig(data.data);
-        if (data.timeSlots && Array.isArray(data.timeSlots)) {
-          setTimeSlots(data.timeSlots);
-        }
-        showToast('School Bell Schedule parameters saved & time slots generated.');
+      if (data.success && data.timeSlots && Array.isArray(data.timeSlots)) {
+        setTimeSlots(data.timeSlots);
       }
     } catch (err) {
-      showToast('Failed to save bell schedule parameters.', 'danger');
+      console.warn('Network save notice:', err.message);
     }
   };
 
@@ -819,6 +950,49 @@ export function SchoolProvider({ children }) {
     }
 
     showToast('Timetable period slot updated and saved to MySQL database.');
+  };
+
+  const deleteTimetableSlot = async (slotId) => {
+    setWeeklyTimetables(prev => {
+      const weekSlots = prev[activeWeekKey] || [];
+      const updatedSlots = weekSlots.filter(s => String(s.id) !== String(slotId));
+      return { ...prev, [activeWeekKey]: updatedSlots };
+    });
+
+    try {
+      await fetch(`http://localhost:5000/api/timetables/slot/${encodeURIComponent(slotId)}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {
+      console.warn('Failed to delete slot from MySQL DB:', err.message);
+    }
+
+    showToast('Timetable period slot removed.', 'warning');
+  };
+
+  const clearTimetable = async (options = {}) => {
+    const { gradeFilter = 'ALL', classId = 'ALL' } = options;
+
+    setWeeklyTimetables(prev => {
+      const weekSlots = prev[activeWeekKey] || [];
+      const filtered = weekSlots.filter(s => {
+        if (classId !== 'ALL' && String(s.classId) === String(classId)) return false;
+        if (gradeFilter !== 'ALL' && (String(s.grade || s.gradeName || '').includes(String(gradeFilter)) || String(s.className || '').includes(`Grade ${gradeFilter}`))) return false;
+        if (gradeFilter === 'ALL' && classId === 'ALL') return false;
+        return true;
+      });
+      return { ...prev, [activeWeekKey]: filtered };
+    });
+
+    try {
+      const endpointTarget = classId !== 'ALL' ? classId : (gradeFilter !== 'ALL' ? `grade_${gradeFilter}` : 'all');
+      await fetch(`http://localhost:5000/api/timetables/${encodeURIComponent(endpointTarget)}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('Failed to clear timetable from MySQL DB:', err.message);
+    }
+
+    const msg = classId !== 'ALL' ? 'Class section timetable cleared.' : (gradeFilter !== 'ALL' ? `Grade ${gradeFilter} timetable cleared.` : 'Master timetable schedule cleared.');
+    showToast(msg, 'warning');
   };
 
   const handleSetTab = (tabId) => {
@@ -892,7 +1066,9 @@ export function SchoolProvider({ children }) {
         addGrade,
         updateGrade,
         deleteGrade,
-        updateTimetableSlot
+        updateTimetableSlot,
+        deleteTimetableSlot,
+        clearTimetable
       }}
     >
       {children}

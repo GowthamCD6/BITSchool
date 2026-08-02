@@ -96,18 +96,48 @@ export const updateEcaCell = async (req, res) => {
 export const addEcaVertical = async (req, res) => {
   try {
     const { name, gradeIds } = req.body;
-    if (!name) {
+    if (!name || !String(name).trim()) {
       return res.status(400).json({ success: false, message: 'Vertical name is required.' });
     }
 
-    const existing = await EcaVertical.findOne({ where: { name } });
+    const cleanName = String(name).trim();
+
+    // Check existing by exact name or case-insensitive name
+    let existing = await EcaVertical.findOne({ where: { name: cleanName } });
+    if (!existing) {
+      const allVerts = await EcaVertical.findAll();
+      existing = allVerts.find(v => (v.name || '').trim().toLowerCase() === cleanName.toLowerCase());
+    }
+
     if (existing) {
-      return res.status(409).json({ success: false, message: `Vertical "${name}" already exists.` });
+      if (gradeIds && Array.isArray(gradeIds) && gradeIds.length > 0) {
+        const mappings = gradeIds.map(gId => ({
+          gradeId: String(gId).replace('Grade ', ''),
+          ecaVerticalId: existing.id
+        }));
+        await GradeEcaVertical.bulkCreate(mappings, { ignoreDuplicates: true });
+      }
+
+      const result = await EcaVertical.findByPk(existing.id, {
+        include: [{ model: Grade, as: 'grades', through: { attributes: [] } }]
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `Vertical "${cleanName}" updated with grade levels.`,
+        data: {
+          id: result.id,
+          name: result.name,
+          category: result.category,
+          color: result.color,
+          grades: (result.grades || []).map(g => ({ id: g.id, name: g.name }))
+        }
+      });
     }
 
     const vertical = await EcaVertical.create({
       id: `eca_${Date.now()}`,
-      name,
+      name: cleanName,
       category: 'General',
       color: '#2563eb'
     });
@@ -115,10 +145,10 @@ export const addEcaVertical = async (req, res) => {
     // Associate with grades if provided
     if (gradeIds && Array.isArray(gradeIds) && gradeIds.length > 0) {
       const mappings = gradeIds.map(gId => ({
-        gradeId: gId,
+        gradeId: String(gId).replace('Grade ', ''),
         ecaVerticalId: vertical.id
       }));
-      await GradeEcaVertical.bulkCreate(mappings);
+      await GradeEcaVertical.bulkCreate(mappings, { ignoreDuplicates: true });
     }
 
     // Fetch the vertical with grades to return

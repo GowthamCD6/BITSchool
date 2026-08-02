@@ -4,6 +4,7 @@ import {
   getTimetableByWeek,
   saveTimetableForWeek,
   updateTimetableSlot,
+  deleteSingleSlot,
   deleteWeekTimetable
 } from '../controllers/timetableController.js';
 
@@ -14,6 +15,7 @@ router.get('/:weekKey', getTimetableByWeek);
 router.post('/', saveTimetableForWeek);
 router.post('/save', saveTimetableForWeek);
 router.put('/slot/:id', updateTimetableSlot);
+router.delete('/slot/:id', deleteSingleSlot);
 router.delete('/:weekKey', deleteWeekTimetable);
 
 export default router;

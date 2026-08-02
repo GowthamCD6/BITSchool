@@ -260,6 +260,15 @@ export function generateAutoTimetable({
   classesToProcess.forEach((cls) => {
     const classGrade = getGradeStr(cls);
 
+    // Resolve assigned home classroom venue for this class section
+    const homeVenue = (cls.homeVenueId && venues.find(v => String(v.id) === String(cls.homeVenueId)))
+      || (cls.homeVenueRoomNo && venues.find(v => String(v.roomNo).trim() === String(cls.homeVenueRoomNo).trim()))
+      || (cls.roomNo && venues.find(v => String(v.roomNo).trim() === String(cls.roomNo).trim()))
+      || venues.find(v => (v.type === 'normal' || !v.type) && String(v.name).toLowerCase().includes(String(cls.name || '').toLowerCase()))
+      || venues.find(v => v.type === 'normal' || !v.type)
+      || venues[0]
+      || { id: `v_${cls.id}`, name: `${cls.name} Classroom`, roomNo: cls.homeVenueRoomNo || 'Room 101', type: 'normal' };
+
     // Filter subjects applicable to this grade
     const gradeSubjects = subjects.filter(s => {
       if (!s.grade || s.grade === 'all') return true;
@@ -505,14 +514,17 @@ export function generateAutoTimetable({
             // Re-resolve best faculty for this specific subject, grade, day & time slot to guarantee subject matching and minimize conflicts
             const fac = findBestFacultyForSubject(subj, classGrade, faculties, day, startStr, facultyBusy);
 
-            // Find venue
-            let chosenVenue = venues.find(v =>
-              v.type === subj.requiredVenueType && !venueBusy[`${v.id}_${day}_${startStr}`] && v.status === 'Available'
-            );
+            // Find venue: Normal academic subjects ALWAYS stay in the Class Section's Home Classroom!
+            let chosenVenue = null;
+            if (subj.requiredVenueType && subj.requiredVenueType !== 'normal') {
+              // Special facility required (e.g. Computer Lab, Science Lab, Auditorium)
+              chosenVenue = venues.find(v =>
+                v.type === subj.requiredVenueType && !venueBusy[`${v.id}_${day}_${startStr}`] && v.status === 'Available'
+              ) || venues.find(v => v.type === subj.requiredVenueType);
+            }
+
             if (!chosenVenue) {
-              chosenVenue = venues.find(v => v.id === cls.homeVenueId && !venueBusy[`${v.id}_${day}_${startStr}`])
-                || venues.find(v => !venueBusy[`${v.id}_${day}_${startStr}`] && v.status === 'Available')
-                || venues[0] || { id: 'v1', name: 'Classroom', roomNo: 'Room 100', type: 'normal' };
+              chosenVenue = homeVenue;
             }
 
             const isConflict = Boolean(fac.id && facultyBusy[`${fac.id}_${day}_${startStr}`]);
