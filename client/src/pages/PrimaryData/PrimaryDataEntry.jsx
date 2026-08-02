@@ -576,14 +576,6 @@ export default function PrimaryDataEntry() {
           >
             <Activity size={16} /> Non Academics & ECA Schedule ({ecaVerticals.length} Verticals)
           </button>
-
-          <button
-            className={`btn ${activeTab === 'timeslots' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem', border: 'none' }}
-            onClick={() => setActiveTab('timeslots')}
-          >
-            <Clock size={16} /> Daily Bell Schedule & Time Slots ({(timeSlots || []).length} Slots)
-          </button>
         </div>
 
         {activeTab === 'grades' && (
@@ -604,12 +596,6 @@ export default function PrimaryDataEntry() {
         {activeTab === 'eca' && (
           <button className="btn btn-primary" onClick={() => setIsAddVerticalModalOpen(true)}>
             <Plus size={16} /> Add ECA Vertical
-          </button>
-        )}
-
-        {activeTab === 'timeslots' && (
-          <button className="btn btn-primary" onClick={() => openSlotModal()}>
-            <Plus size={16} /> Add Time Slot
           </button>
         )}
       </div>
@@ -1355,177 +1341,7 @@ export default function PrimaryDataEntry() {
         </div>
       )}
 
-      {/* ── WORKSPACE 4: DAILY BELL SCHEDULE TIMING PARAMETERS ── */}
-      {activeTab === 'timeslots' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Workspace Header */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '1rem',
-              padding: '1rem 1.25rem',
-              background: '#ffffff',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-md)',
-              flexWrap: 'wrap'
-            }}
-          >
-            <div>
-              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                Master School Bell Schedule & Timing Parameters
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Set School Start Time, First Break, Lunch Break, Second Break, and End Time (12-hour AM/PM format).
-              </div>
-            </div>
-          </div>
 
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            {/* Master Bell Parameters Form Card */}
-            <div className="glass-card" style={{ padding: '1.75rem', width: '100%', maxWidth: '720px' }}>
-              <div
-                style={{
-                  fontSize: '1rem',
-                  fontWeight: 800,
-                  color: 'var(--text-main)',
-                  paddingBottom: '0.75rem',
-                  marginBottom: '1.25rem',
-                  borderBottom: '1px solid var(--border-color)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem'
-                }}
-              >
-                <Clock size={18} color="#2563eb" /> Configure Daily School Milestones (12-Hour AM/PM)
-              </div>
-
-              <form onSubmit={handleSaveBellConfig} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label style={{ fontWeight: 700, fontSize: '0.82rem' }}>⏰ School Day Start Time</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="08:30 AM"
-                      value={bellForm.schoolStartTime}
-                      onChange={(e) => setBellForm({ ...bellForm, schoolStartTime: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label style={{ fontWeight: 700, fontSize: '0.82rem' }}>🔔 School Day End Time</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="03:45 PM"
-                      value={bellForm.schoolEndTime}
-                      onChange={(e) => setBellForm({ ...bellForm, schoolEndTime: e.target.value })}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div style={{ background: '#fffbeb', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid #fef08a' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#92400e', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Coffee size={15} /> First Break (Morning)
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: '#78350f' }}>Break Start Time</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="10:00 AM"
-                        value={bellForm.morningBreakStart}
-                        onChange={(e) => setBellForm({ ...bellForm, morningBreakStart: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: '#78350f' }}>Break End Time</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="10:15 AM"
-                        value={bellForm.morningBreakEnd}
-                        onChange={(e) => setBellForm({ ...bellForm, morningBreakEnd: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ background: '#fef2f2', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid #fecaca' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#991b1b', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Utensils size={15} /> Lunch Break
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: '#7f1d1d' }}>Lunch Start Time</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="11:45 AM"
-                        value={bellForm.lunchBreakStart}
-                        onChange={(e) => setBellForm({ ...bellForm, lunchBreakStart: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: '#7f1d1d' }}>Lunch End Time</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="12:30 PM"
-                        value={bellForm.lunchBreakEnd}
-                        onChange={(e) => setBellForm({ ...bellForm, lunchBreakEnd: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ background: '#fffbeb', padding: '0.85rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid #fef08a' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#92400e', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Coffee size={15} /> Second Break (Afternoon)
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: '#78350f' }}>Break Start Time</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="02:00 PM"
-                        value={bellForm.afternoonBreakStart}
-                        onChange={(e) => setBellForm({ ...bellForm, afternoonBreakStart: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: '#78350f' }}>Break End Time</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="02:15 PM"
-                        value={bellForm.afternoonBreakEnd}
-                        onChange={(e) => setBellForm({ ...bellForm, afternoonBreakEnd: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem', width: '100%', justifyContent: 'center' }}>
-                  Save School Bell Timing Parameters
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── MODAL: ADD GRADE LEVEL ── */}
       <Modal

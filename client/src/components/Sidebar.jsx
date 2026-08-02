@@ -7,6 +7,8 @@ import {
   CalendarDays,
   GraduationCap,
   Layers,
+  Clock,
+  BarChart3,
   User as UserIcon
 } from 'lucide-react';
 
@@ -26,12 +28,14 @@ export default function Sidebar() {
         { id: 'primary-data', label: 'Primary Data Entry', icon: Layers },
         { id: 'faculties', label: 'Faculty Management', icon: Users, badge: faculties.length },
         { id: 'venues', label: 'Venue & Classrooms', icon: Building2, badge: venues.length },
+        { id: 'bell-schedule', label: 'Bell Schedule Engine', icon: Clock },
       ]
     },
     {
       title: 'SCHEDULING & MATRIX',
       items: [
         { id: 'timetable', label: 'Time Table Scheduler', icon: CalendarDays, badge: 'Auto' },
+        { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
       ]
     }
   ];

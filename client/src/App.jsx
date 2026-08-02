@@ -10,6 +10,8 @@ import PrimaryDataEntry from './pages/PrimaryData/PrimaryDataEntry';
 import FacultyManagement from './pages/Faculty/FacultyManagement';
 import VenueManagement from './pages/Venue/VenueManagement';
 import TimetableScheduler from './pages/TimeTable/TimetableScheduler';
+import BellScheduleConfigPage from './pages/BellSchedule/BellScheduleConfigPage';
+import ReportsPage from './pages/Reports/ReportsPage';
 
 function AppContent() {
   const { isAuthenticated, activeTab } = useSchool();
@@ -34,8 +36,12 @@ function AppContent() {
         return <FacultyManagement />;
       case 'venues':
         return <VenueManagement />;
+      case 'bell-schedule':
+        return <BellScheduleConfigPage />;
       case 'timetable':
         return <TimetableScheduler />;
+      case 'reports':
+        return <ReportsPage />;
       default:
         return <Dashboard />;
     }

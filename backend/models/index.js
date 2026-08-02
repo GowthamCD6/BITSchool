@@ -515,6 +515,107 @@ export const BellScheduleConfig = sequelize.define('BellScheduleConfig', {
   timestamps: true
 });
 
+// ============================================================
+// 14. TIMETABLE SLOT MODEL (timetable_slots Table)
+// ============================================================
+export const TimetableSlot = sequelize.define('TimetableSlot', {
+  id: {
+    type: DataTypes.STRING(100),
+    primaryKey: true
+  },
+  classId: {
+    type: DataTypes.STRING(50),
+    allowNull: false
+  },
+  className: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  day: {
+    type: DataTypes.STRING(20),
+    allowNull: false
+  },
+  period: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  periodName: {
+    type: DataTypes.STRING(50),
+    allowNull: true
+  },
+  periodTime: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  startTime: {
+    type: DataTypes.STRING(50),
+    allowNull: true
+  },
+  endTime: {
+    type: DataTypes.STRING(50),
+    allowNull: true
+  },
+  durationMins: {
+    type: DataTypes.INTEGER,
+    defaultValue: 45
+  },
+  subjectId: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  subjectName: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  subjectCode: {
+    type: DataTypes.STRING(50),
+    allowNull: true
+  },
+  subjectColor: {
+    type: DataTypes.STRING(50),
+    defaultValue: '#2563eb'
+  },
+  facultyId: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  facultyName: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  venueId: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  venueName: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  venueRoomNo: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  venueType: {
+    type: DataTypes.STRING(50),
+    defaultValue: 'normal'
+  },
+  isConflict: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  conflictReason: {
+    type: DataTypes.STRING(255),
+    allowNull: true
+  },
+  ecaTag: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  }
+}, {
+  tableName: 'timetable_slots',
+  timestamps: true
+});
+
 // Define Relationships
 Role.hasMany(User, { foreignKey: 'roleId', as: 'users' });
 User.belongsTo(Role, { foreignKey: 'roleId', as: 'role' });
@@ -573,6 +674,7 @@ export async function syncDatabase() {
     await GradeEcaVertical.sync();
     await TimeSlot.sync();
     await BellScheduleConfig.sync();
+    await TimetableSlot.sync({ alter: true });
 
     // Seed / Sync bell config and auto-generate time_slots table with 12-hour AM/PM format
     let bellConfig = await BellScheduleConfig.findOne();

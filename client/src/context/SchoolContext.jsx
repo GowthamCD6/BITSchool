@@ -151,11 +151,11 @@ export function SchoolProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
 
-  // Fetch ALL data from MySQL Backend API on mount (Classes, Subjects, Venues, Faculties, Grades, ECA)
+  // Fetch ALL data from MySQL Backend API on mount (Classes, Subjects, Venues, Faculties, Grades, ECA, Timetable)
   useEffect(() => {
     const fetchDatabaseData = async () => {
       try {
-        const [classesRes, subjectsRes, venuesRes, facultiesRes, gradesRes, ecaRes, timeSlotsRes, bellConfigRes] = await Promise.all([
+        const [classesRes, subjectsRes, venuesRes, facultiesRes, gradesRes, ecaRes, timeSlotsRes, bellConfigRes, timetablesRes] = await Promise.all([
           fetch('http://localhost:5000/api/classes'),
           fetch('http://localhost:5000/api/courses'),
           fetch('http://localhost:5000/api/venues'),
@@ -163,7 +163,8 @@ export function SchoolProvider({ children }) {
           fetch('http://localhost:5000/api/grades'),
           fetch('http://localhost:5000/api/eca'),
           fetch('http://localhost:5000/api/time-slots'),
-          fetch('http://localhost:5000/api/time-slots/bell-config')
+          fetch('http://localhost:5000/api/time-slots/bell-config'),
+          fetch('http://localhost:5000/api/timetables')
         ]);
 
         let loadedClasses = [];
@@ -172,6 +173,7 @@ export function SchoolProvider({ children }) {
         let loadedFaculties = [];
         let loadedEcaSchedule = {};
         let loadedBellConfig = bellConfig;
+        let hasLoadedSavedTimetable = false;
 
         if (classesRes.ok) {
           const data = await classesRes.json();
@@ -234,25 +236,21 @@ export function SchoolProvider({ children }) {
           }
         }
 
-        if (loadedClasses.length > 0) {
-          const generated = generateAutoTimetable({
-            faculties: loadedFaculties,
-            venues: loadedVenues,
-            classes: loadedClasses,
-            subjects: loadedSubjects,
-            ecaSchedule: loadedEcaSchedule,
-            bellConfig: loadedBellConfig,
-            targetClassId: 'all',
-            targetGrade: 'all',
-            existingTimetable: []
-          });
-          if (generated.timetable && generated.timetable.length > 0) {
+        if (timetablesRes && timetablesRes.ok) {
+          const ttData = await timetablesRes.json();
+          const savedSlots = Array.isArray(ttData) ? ttData : (ttData.data || []);
+          if (savedSlots.length > 0) {
             const currentWeek = toWeekKey(getMondayOfWeek(new Date()));
             setWeeklyTimetables(prev => ({
               ...prev,
-              [currentWeek]: generated.timetable
+              [currentWeek]: savedSlots
             }));
-            setTimetableStats(generated.stats);
+            setTimetableStats({
+              totalSlots: savedSlots.length,
+              allocatedSlots: savedSlots.length,
+              conflictCount: savedSlots.filter(s => s.isConflict).length,
+              utilizationRate: Math.max(0, Math.round(((savedSlots.length - savedSlots.filter(s => s.isConflict).length) / savedSlots.length) * 100))
+            });
           }
         }
       } catch (err) {
@@ -420,8 +418,8 @@ export function SchoolProvider({ children }) {
     }, 3500);
   };
 
-  // Auto Generate Master Timetable
-  const handleAutoGenerateTimetable = (options = {}) => {
+  // Auto Generate Master Timetable & Persist to MySQL DB
+  const handleAutoGenerateTimetable = async (options = {}) => {
     const existingWeekSlots = weeklyTimetables[activeWeekKey] || [];
     const result = generateAutoTimetable({
       faculties,
@@ -434,22 +432,42 @@ export function SchoolProvider({ children }) {
       targetGrade: options.targetGrade || 'all',
       existingTimetable: existingWeekSlots
     });
+
     setWeeklyTimetables(prev => ({
       ...prev,
       [activeWeekKey]: result.timetable
     }));
     setTimetableStats(result.stats);
-    showToast(`Master Timetable Auto-Scheduled Successfully! ${result.stats.allocatedSlots} slots allocated (${result.stats.utilizationRate}% Efficiency).`, 'success');
+
+    // Persist all generated slots to MySQL backend database
+    try {
+      await fetch('http://localhost:5000/api/timetables/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slots: result.timetable })
+      });
+    } catch (err) {
+      console.warn('MySQL Timetable Save Warning:', err.message);
+    }
+
+    showToast(`Master Timetable Auto-Scheduled & Saved to MySQL! ${result.stats.allocatedSlots} slots allocated (${result.stats.utilizationRate}% Efficiency).`, 'success');
   };
 
-  // ── Delete a week's timetable ──
-  const deleteWeekTimetable = (weekKey) => {
+  // ── Delete a week's timetable & clear from MySQL ──
+  const deleteWeekTimetable = async (weekKey) => {
     setWeeklyTimetables(prev => {
       const copy = { ...prev };
       delete copy[weekKey];
       return copy;
     });
-    showToast(`Timetable for week ${weekKey} deleted.`, 'warning');
+
+    try {
+      await fetch(`http://localhost:5000/api/timetables/all`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('Failed to delete timetable slots from MySQL DB:', err.message);
+    }
+
+    showToast(`Timetable cleared from MySQL database.`, 'warning');
   };
 
   // ── Get all generated week keys sorted descending ──
@@ -756,8 +774,10 @@ export function SchoolProvider({ children }) {
     }
   };
 
-  // Update a single Timetable cell slot (within active week)
-  const updateTimetableSlot = (slotId, newDetails) => {
+  // Update a single Timetable cell slot (within active week) & persist to MySQL DB
+  const updateTimetableSlot = async (slotId, newDetails) => {
+    let updatedSlotObj = null;
+
     setWeeklyTimetables(prev => {
       const weekSlots = prev[activeWeekKey] || [];
       const updatedSlots = weekSlots.map(slot => {
@@ -766,7 +786,7 @@ export function SchoolProvider({ children }) {
           const fac = faculties.find(f => f.id === newDetails.facultyId);
           const ven = venues.find(v => v.id === newDetails.venueId);
 
-          return {
+          updatedSlotObj = {
             ...slot,
             subjectId: subj ? subj.id : slot.subjectId,
             subjectName: subj ? subj.name : slot.subjectName,
@@ -779,12 +799,26 @@ export function SchoolProvider({ children }) {
             venueRoomNo: ven ? ven.roomNo : slot.venueRoomNo,
             venueType: ven ? ven.type : slot.venueType
           };
+          return updatedSlotObj;
         }
         return slot;
       });
       return { ...prev, [activeWeekKey]: updatedSlots };
     });
-    showToast('Timetable period slot updated manually.');
+
+    if (updatedSlotObj) {
+      try {
+        await fetch(`http://localhost:5000/api/timetables/slot/${encodeURIComponent(slotId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedSlotObj)
+        });
+      } catch (err) {
+        console.warn('Failed to update slot in MySQL DB:', err.message);
+      }
+    }
+
+    showToast('Timetable period slot updated and saved to MySQL database.');
   };
 
   const handleSetTab = (tabId) => {

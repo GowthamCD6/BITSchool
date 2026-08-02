@@ -54,6 +54,65 @@ function seededShuffle(arr, seed) {
 }
 
 /**
+ * Helper to find the strictly matched faculty member for a subject and grade.
+ */
+export function findBestFacultyForSubject(subj, classGrade, faculties = [], day = '', startStr = '', facultyBusy = {}) {
+  if (!subj) return { id: 'f_default', name: 'Staff Faculty' };
+  const gradeStr = String(classGrade || '').replace(/\D/g, '');
+
+  // Helper to check if a faculty teaches this subject
+  const teachesSubject = (f) => {
+    if (!f) return false;
+    // Direct ID match on primarySubjectId or secondarySubjectIds
+    if (f.primarySubjectId && f.primarySubjectId === subj.id) return true;
+    if (Array.isArray(f.secondarySubjectIds) && f.secondarySubjectIds.includes(subj.id)) return true;
+    if (f.primarySubject && f.primarySubject.id === subj.id) return true;
+    
+    // Name or code string match fallback (case insensitive)
+    const subjName = String(subj.name || '').toLowerCase();
+    const subjCode = String(subj.code || '').toLowerCase();
+    const fPrimaryName = String(f.primarySubjectName || f.primarySubject || '').toLowerCase();
+    const fSpec = String(f.specialization || f.subject || f.department || '').toLowerCase();
+
+    if (subjName && (fPrimaryName.includes(subjName) || fSpec.includes(subjName))) return true;
+    if (subjCode && (fPrimaryName.includes(subjCode) || fSpec.includes(subjCode))) return true;
+
+    return false;
+  };
+
+  // Helper to check if a faculty teaches this grade
+  const teachesGrade = (f) => {
+    if (!f) return false;
+    if (!f.grades || !Array.isArray(f.grades) || f.grades.length === 0) return true; // General staff
+    return f.grades.some((g) => {
+      const gNum = String(g).replace(/\D/g, '');
+      return gNum === gradeStr || String(g).includes(gradeStr) || String(g) === 'all';
+    });
+  };
+
+  // 1. Matched Subject + Matched Grade + Available (Not Busy)
+  const bestAvailable = faculties.find(
+    (f) => teachesSubject(f) && teachesGrade(f) && (!day || !startStr || !facultyBusy[`${f.id}_${day}_${startStr}`])
+  );
+  if (bestAvailable) return bestAvailable;
+
+  // 2. Matched Subject + Matched Grade (Any, even if busy)
+  const bestGradeMatch = faculties.find((f) => teachesSubject(f) && teachesGrade(f));
+  if (bestGradeMatch) return bestGradeMatch;
+
+  // 3. Matched Subject (Any grade)
+  const bestSubjectMatch = faculties.find((f) => teachesSubject(f));
+  if (bestSubjectMatch) return bestSubjectMatch;
+
+  // 4. Default fallback: Dedicated subject-labeled faculty instead of wrong teacher
+  return {
+    id: `f_unassigned_${subj.id}`,
+    name: `${subj.name || 'Subject'} Faculty`,
+    empId: `STAFF-${subj.code || 'SUBJ'}`
+  };
+}
+
+/**
  * Calculate per-period duration in minutes for a subject:
  * Formula: Period Duration = Total Weekly Duration (minutes) / Weekly Periods Count
  * Then round to nearest 5 minutes and enforce minimum 15 minutes.
@@ -270,9 +329,7 @@ export function generateAutoTimetable({
 
       // Build a full reference list of all subjects with their computed durations & faculties
       const allSubjectEntries = activeSubjects.map(subj => {
-        const fac = faculties.find(f =>
-          f.primarySubjectId === subj.id || (f.secondarySubjectIds && f.secondarySubjectIds.includes(subj.id))
-        ) || faculties.find(f => f.primarySubjectId === subj.id) || faculties[0] || { id: 'f_default', name: 'Staff Faculty' };
+        const fac = findBestFacultyForSubject(subj, classGrade, faculties, '', '', facultyBusy);
         return {
           subject: subj,
           faculty: fac,
@@ -380,9 +437,10 @@ export function generateAutoTimetable({
             continue;
           }
 
-          // ─── RULE: Place Academic Subject (3-TIER FALLBACK) ───
-          // Helper: try to find a fitting candidate from a list
-          const findCandidate = (pool, checkQuota, checkToday) => {
+          // ─── RULE: Place Academic Subject (4-TIER FALLBACK WITH FACULTY & VENUE AVAILABILITY) ───
+          // Helper: try to find a fitting candidate from a list with strict faculty non-collision check
+          const findCandidate = (pool, checkQuota, checkToday, checkFacultyFree = true) => {
+            const startStr = formatMinutesTo12Hr(currentMins);
             for (let i = 0; i < pool.length; i++) {
               const cand = pool[i];
               const subjId = cand.subject.id;
@@ -405,31 +463,47 @@ export function generateAutoTimetable({
                 }
               }
 
+              // Check if faculty for this subject is free at this slot across all sections
+              if (checkFacultyFree) {
+                const fac = findBestFacultyForSubject(cand.subject, classGrade, faculties, day, startStr, facultyBusy);
+                if (fac && fac.id && facultyBusy[`${fac.id}_${day}_${startStr}`]) {
+                  // Faculty is currently teaching another section! Skip candidate to avoid collision.
+                  continue;
+                }
+              }
+
               return { ...cand, actualDuration: dur, poolIndex: i };
             }
             return null;
           };
 
-          // TIER 1: Quota-respecting + unique today (ideal)
-          let chosen = findCandidate(quotaPool, true, true);
+          // TIER 1: Quota-respecting + unique today + faculty free for this section & time slot (ideal)
+          let chosen = findCandidate(quotaPool, true, true, true);
 
-          // TIER 2: Unique today but allow over-quota (when quotas exhausted)
+          // TIER 2: Unique today + faculty free (when quotas exhausted)
           if (!chosen) {
-            chosen = findCandidate(shuffledAllSubjects, false, true);
+            chosen = findCandidate(shuffledAllSubjects, false, true, true);
           }
 
-          // TIER 3: Allow repeats — pick any subject that fits (absolute last resort)
+          // TIER 3: Quota-respecting + faculty free (allow repeat subject today if needed)
           if (!chosen) {
-            chosen = findCandidate(shuffledAllSubjects, false, false);
+            chosen = findCandidate(quotaPool, true, false, true);
+          }
+
+          // TIER 4: Allow repeats & allow conflict if no free faculty exists anywhere
+          if (!chosen) {
+            chosen = findCandidate(shuffledAllSubjects, false, false, false);
           }
 
           if (chosen) {
             const subj = chosen.subject;
-            const fac = chosen.faculty;
             const dur = chosen.actualDuration;
 
             const startStr = formatMinutesTo12Hr(currentMins);
             const endStr = formatMinutesTo12Hr(currentMins + dur);
+
+            // Re-resolve best faculty for this specific subject, grade, day & time slot to guarantee subject matching and minimize conflicts
+            const fac = findBestFacultyForSubject(subj, classGrade, faculties, day, startStr, facultyBusy);
 
             // Find venue
             let chosenVenue = venues.find(v =>
