@@ -28,23 +28,27 @@ function toWeekKey(date) {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
+function safeJSONParse(key, fallback) {
+  try {
+    const saved = localStorage.getItem(key);
+    if (!saved) return fallback;
+    return JSON.parse(saved);
+  } catch (err) {
+    console.warn(`Failed to parse localStorage key "${key}":`, err.message);
+    return fallback;
+  }
+}
 
 export function SchoolProvider({ children }) {
   // ── Authentication State ──
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    const saved = localStorage.getItem('bitschool_authenticated');
-    return saved !== null ? JSON.parse(saved) : true;
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState(() => safeJSONParse('bitschool_authenticated', true));
 
-  const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('bitschool_user');
-    return saved ? JSON.parse(saved) : {
-      name: 'Gowtham',
-      email: 'gowthamnaveen124@gmail.com',
-      role: 'Principal Administrator',
-      avatarColor: '#2563eb'
-    };
-  });
+  const [currentUser, setCurrentUser] = useState(() => safeJSONParse('bitschool_user', {
+    name: 'Gowtham',
+    email: 'gowthamnaveen124@gmail.com',
+    role: 'Principal Administrator',
+    avatarColor: '#2563eb'
+  }));
 
   const [activeTab, setActiveTabState] = useState(() => {
     const savedTab = localStorage.getItem('bitschool_active_tab');
@@ -57,50 +61,21 @@ export function SchoolProvider({ children }) {
   };
 
   // Live Database Entity States (Initialized empty or from database cache)
-  const [faculties, setFaculties] = useState(() => {
-    const saved = localStorage.getItem('bitschool_faculties');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [venues, setVenues] = useState(() => {
-    const saved = localStorage.getItem('bitschool_venues');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [classes, setClasses] = useState(() => {
-    const saved = localStorage.getItem('bitschool_classes');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [subjects, setSubjects] = useState(() => {
-    const saved = localStorage.getItem('bitschool_subjects');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [grades, setGrades] = useState(() => {
-    const saved = localStorage.getItem('bitschool_grades');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [faculties, setFaculties] = useState(() => safeJSONParse('bitschool_faculties', []));
+  const [venues, setVenues] = useState(() => safeJSONParse('bitschool_venues', []));
+  const [classes, setClasses] = useState(() => safeJSONParse('bitschool_classes', []));
+  const [subjects, setSubjects] = useState(() => safeJSONParse('bitschool_subjects', []));
+  const [grades, setGrades] = useState(() => safeJSONParse('bitschool_grades', []));
 
   // ── ECA (Extra Curricular Activities / Non Academics) State ──
-  const [ecaVerticals, setEcaVerticals] = useState(() => {
-    const saved = localStorage.getItem('bitschool_eca_verticals');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [ecaSchedule, setEcaSchedule] = useState(() => {
-    const saved = localStorage.getItem('bitschool_eca_schedule');
-    return saved ? JSON.parse(saved) : {};
-  });
+  const [ecaVerticals, setEcaVerticals] = useState(() => safeJSONParse('bitschool_eca_verticals', []));
+  const [ecaSchedule, setEcaSchedule] = useState(() => safeJSONParse('bitschool_eca_schedule', {}));
 
   // ECA vertical details with grade mappings
   const [ecaVerticalDetails, setEcaVerticalDetails] = useState([]);
 
   // ── Bell Schedule Time Slots State ──
-  const [timeSlots, setTimeSlots] = useState(() => {
-    const saved = localStorage.getItem('bitschool_time_slots');
-    return saved ? JSON.parse(saved) : PERIODS;
-  });
+  const [timeSlots, setTimeSlots] = useState(() => safeJSONParse('bitschool_time_slots', PERIODS));
 
   // ── Master Bell Schedule Timing Parameters ──
   const [bellConfig, setBellConfig] = useState({
@@ -122,19 +97,7 @@ export function SchoolProvider({ children }) {
   });
 
   // ── Week-keyed timetable store: { '2026-07-27': [...slots], ... } ──
-  const [weeklyTimetables, setWeeklyTimetables] = useState(() => {
-    const saved = localStorage.getItem('bitschool_weekly_timetables');
-    if (saved) return JSON.parse(saved);
-
-    // Migrate from old single timetable if it exists
-    const oldTT = localStorage.getItem('bitschool_timetable');
-    if (oldTT) {
-      const currentWeek = toWeekKey(getMondayOfWeek(new Date()));
-      return { [currentWeek]: JSON.parse(oldTT) };
-    }
-
-    return {};
-  });
+  const [weeklyTimetables, setWeeklyTimetables] = useState(() => safeJSONParse('bitschool_weekly_timetables', {}));
 
   // ── Derived: current week's timetable ──
   const timetable = useMemo(() => {
@@ -219,7 +182,13 @@ export function SchoolProvider({ children }) {
         if (loaded.length > 0) setTimeSlots(loaded.sort((a, b) => a.slotNo - b.slotNo));
       }
       if (bellConfigData && bellConfigData.data) {
-        setBellConfig(bellConfigData.data);
+        const cleaned = { ...bellConfigData.data };
+        Object.keys(cleaned).forEach(k => {
+          if (typeof cleaned[k] === 'string' && cleaned[k].toUpperCase().startsWith('12:') && cleaned[k].toUpperCase().includes('AM')) {
+            cleaned[k] = cleaned[k].replace(/AM/i, 'PM');
+          }
+        });
+        setBellConfig(cleaned);
       }
       if (timetablesData) {
         const savedSlots = Array.isArray(timetablesData) ? timetablesData : (timetablesData.data || []);
@@ -1077,5 +1046,10 @@ export function SchoolProvider({ children }) {
 }
 
 export function useSchool() {
-  return useContext(SchoolContext);
+  const context = useContext(SchoolContext);
+  if (!context) {
+    console.warn('useSchool was invoked outside of SchoolProvider or context is not yet initialized.');
+    return {};
+  }
+  return context;
 }

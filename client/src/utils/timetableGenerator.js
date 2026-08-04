@@ -1,572 +1,753 @@
+/**
+ * ═══════════════════════════════════════════════════════════
+ *  BITSCHOOL TIMETABLE GENERATOR — CLEAN FROM SCRATCH
+ * ═══════════════════════════════════════════════════════════
+ *
+ *  THREE INPUTS:
+ *    1. Bell Schedule   → defines fixed day anchors (start, breaks, end)
+ *    2. ECA Schedule    → grade+day specific ECA activities (FIXED, immovable)
+ *    3. Master Courses  → academic subjects with weekly duration & period count
+ *
+ *  ALGORITHM (per class, per day):
+ *    Step 1 → Physical Fitness at schoolStartTime (ALWAYS FIRST)
+ *    Step 2 → Session A: physFitnessEnd → morningBreakStart  (academics)
+ *    Step 3 → Morning Break  (FIXED)
+ *    Step 4 → Session B: morningBreakEnd → lunchBreakStart   (academics)
+ *    Step 5 → Lunch Break    (FIXED)
+ *    Step 6 → ECA blocks: lunchBreakEnd → afternoonBreakStart (FIXED ECA, clamped)
+ *    Step 7 → Session C: remaining post-ECA → afternoonBreakStart (academics if gap)
+ *    Step 8 → Afternoon Break (FIXED)
+ *    Step 9 → Session D: afternoonBreakEnd → schoolEndTime   (academics)
+ *
+ *  RULES:
+ *    • No duplicate subject within a single day
+ *    • Use EXACT per-period duration = weeklyDuration / weeklyPeriods
+ *    • Last period in each session is stretched to meet the next anchor exactly
+ *    • ECA blocks are never pushed past afternoonBreakStart
+ * ═══════════════════════════════════════════════════════════
+ */
+
 import { DAYS } from './constants.js';
 
-// ─── Constants ───
-const MIN_PERIOD_MINS = 15;   // Absolute minimum: no period shorter than 15 minutes
-const ROUND_TO = 5;           // Round all durations to nearest 5-minute increment
+// ─── UTILITIES ───────────────────────────────────────────────────────────────
 
-// Helper: Convert 12hr/24hr string into total minutes from midnight
-function parseTimeToMinutes(timeStr) {
-  if (!timeStr) return 0;
-  const clean = String(timeStr).trim().toUpperCase();
-  const isPM = clean.includes('PM');
-  const isAM = clean.includes('AM');
-  const timeOnly = clean.replace(/AM|PM/g, '').trim();
-  let [h, m] = timeOnly.split(':').map(Number);
-  if (isNaN(h)) h = 0;
-  if (isNaN(m)) m = 0;
+/** Convert '08:30 AM' / '14:30' style string → total minutes from midnight */
+function parseTime(t) {
+  if (!t) return 0;
+  let s = String(t).trim().toUpperCase();
+  let pm = s.includes('PM');
+  let am = s.includes('AM');
+  const clean = s.replace(/AM|PM/g, '').trim();
+  const parts = clean.split(':').map(Number);
+  let h = isNaN(parts[0]) ? 0 : parts[0];
+  const m = isNaN(parts[1]) ? 0 : parts[1];
 
-  if (isPM && h < 12) h += 12;
-  if (isAM && h === 12) h = 0;
+  // In a school timetable (07:00 AM - 07:00 PM), 12:xx AM is a mistyped 12:xx PM (noon/lunch time)
+  if (h === 12 && am) {
+    am = false;
+    pm = true;
+  }
+
+  if (pm && h < 12) h += 12;
+  if (am && h === 12) h = 0;
   return h * 60 + m;
 }
 
-// Helper: Format total minutes into 12-hour AM/PM string (e.g. 08:30 AM, 02:15 PM)
-function formatMinutesTo12Hr(totalMins) {
-  let mins = totalMins % (24 * 60);
-  let hrs = Math.floor(mins / 60);
-  const m = mins % 60;
-  const period = hrs >= 12 ? 'PM' : 'AM';
-  hrs = hrs % 12;
-  if (hrs === 0) hrs = 12;
-  const hh = String(hrs).padStart(2, '0');
-  const mm = String(m).padStart(2, '0');
-  return `${hh}:${mm} ${period}`;
+/** Convert total minutes → '08:30 AM' format */
+function fmt(total) {
+  const t = ((total % 1440) + 1440) % 1440;
+  let h = Math.floor(t / 60);
+  const m = t % 60;
+  const period = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
 }
 
-// Helper: Round minutes to nearest ROUND_TO increment (e.g. 36→35, 18→20, 22→20, 28→30)
-function roundTo5(mins) {
-  return Math.round(mins / ROUND_TO) * ROUND_TO;
+/** Round to nearest 5 minutes */
+function r5(n) { return Math.round(n / 5) * 5; }
+
+/**
+ * Parse duration string → minutes.
+ * Handles: '06:00' (HH:MM), '45 mins', '1 hour', '1 hour 30 mins', etc.
+ */
+function parseDur(text) {
+  if (!text) return null;
+  const raw = String(text).trim().toLowerCase();
+  if (!raw || ['no', 'nan', 'none', ''].includes(raw)) return null;
+
+  // HH:MM format
+  if (/^\d{1,2}:\d{2}$/.test(raw)) {
+    const [h, m] = raw.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  }
+
+  let hours = 0;
+  let mins = 0;
+  if (raw.includes('hour') || raw.includes('hr')) {
+    const hm = raw.match(/(\d+)\s*(?:hour|hr)/);
+    if (hm) hours = parseInt(hm[1], 10);
+    const rest = raw.split(/hour|hr/)[1] || '';
+    const mm = rest.match(/(\d+)/);
+    if (mm) mins = parseInt(mm[1], 10);
+  } else {
+    const d = raw.replace(/[^\d]/g, ' ').trim().split(/\s+/);
+    if (d[0]) mins = parseInt(d[0], 10);
+  }
+  const total = hours * 60 + mins;
+  return total > 0 ? total : null;
 }
 
-// Helper: Seeded shuffle (Fisher-Yates) so each day gets a DIFFERENT but deterministic order
+/** Seeded Fisher-Yates shuffle for deterministic day-to-day variety */
 function seededShuffle(arr, seed) {
   const a = [...arr];
-  let s = seed;
-  const nextRand = () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return (s >>> 16) / 32768.0;
-  };
+  let s = seed >>> 0;
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(nextRand() * (i + 1));
+    s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+    const j = s % (i + 1);
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
 
-/**
- * Helper to find the strictly matched faculty member for a subject and grade.
- */
-export function findBestFacultyForSubject(subj, classGrade, faculties = [], day = '', startStr = '', facultyBusy = {}) {
-  if (!subj) return { id: 'f_default', name: 'Staff Faculty' };
-  const gradeStr = String(classGrade || '').replace(/\D/g, '');
+// ─── GRADE EXTRACTOR ─────────────────────────────────────────────────────────
 
-  // Helper to check if a faculty teaches this subject
-  const teachesSubject = (f) => {
-    if (!f) return false;
-    // Direct ID match on primarySubjectId or secondarySubjectIds
-    if (f.primarySubjectId && f.primarySubjectId === subj.id) return true;
-    if (Array.isArray(f.secondarySubjectIds) && f.secondarySubjectIds.includes(subj.id)) return true;
-    if (f.primarySubject && f.primarySubject.id === subj.id) return true;
-    
-    // Name or code string match fallback (case insensitive)
-    const subjName = String(subj.name || '').toLowerCase();
-    const subjCode = String(subj.code || '').toLowerCase();
-    const fPrimaryName = String(f.primarySubjectName || f.primarySubject || '').toLowerCase();
-    const fSpec = String(f.specialization || f.subject || f.department || '').toLowerCase();
-
-    if (subjName && (fPrimaryName.includes(subjName) || fSpec.includes(subjName))) return true;
-    if (subjCode && (fPrimaryName.includes(subjCode) || fSpec.includes(subjCode))) return true;
-
-    return false;
-  };
-
-  // Helper to check if a faculty teaches this grade
-  const teachesGrade = (f) => {
-    if (!f) return false;
-    if (!f.grades || !Array.isArray(f.grades) || f.grades.length === 0) return true; // General staff
-    return f.grades.some((g) => {
-      const gNum = String(g).replace(/\D/g, '');
-      return gNum === gradeStr || String(g).includes(gradeStr) || String(g) === 'all';
-    });
-  };
-
-  // 1. Matched Subject + Matched Grade + Available (Not Busy)
-  const bestAvailable = faculties.find(
-    (f) => teachesSubject(f) && teachesGrade(f) && (!day || !startStr || !facultyBusy[`${f.id}_${day}_${startStr}`])
-  );
-  if (bestAvailable) return bestAvailable;
-
-  // 2. Matched Subject + Matched Grade (Any, even if busy)
-  const bestGradeMatch = faculties.find((f) => teachesSubject(f) && teachesGrade(f));
-  if (bestGradeMatch) return bestGradeMatch;
-
-  // 3. Matched Subject (Any grade)
-  const bestSubjectMatch = faculties.find((f) => teachesSubject(f));
-  if (bestSubjectMatch) return bestSubjectMatch;
-
-  // 4. Default fallback: Dedicated subject-labeled faculty instead of wrong teacher
-  return {
-    id: `f_unassigned_${subj.id}`,
-    name: `${subj.name || 'Subject'} Faculty`,
-    empId: `STAFF-${subj.code || 'SUBJ'}`
-  };
+function getGrade(cls) {
+  if (!cls) return '';
+  if (cls.gradeName != null) return String(cls.gradeName).replace(/grade\s*/i, '').trim();
+  if (cls.gradeId   != null) return String(cls.gradeId).replace(/grade\s*/i, '').trim();
+  if (cls.grade     != null) {
+    if (typeof cls.grade === 'object') {
+      return String(cls.grade.name || cls.grade.id || '').replace(/grade\s*/i, '').trim();
+    }
+    return String(cls.grade).replace(/grade\s*/i, '').trim();
+  }
+  if (cls.name) {
+    const m = String(cls.name).match(/(\d+)/);
+    if (m) return m[1];
+  }
+  return '';
 }
 
+// ─── ECA MAP LOOKUP ───────────────────────────────────────────────────────────
+
+/** Fetch ECA map for a specific grade and day (grade-specific, no cross-grade contamination) */
+function getEcaMap(ecaSchedule, grade, day) {
+  if (!ecaSchedule || typeof ecaSchedule !== 'object') return {};
+  const du  = String(day).toUpperCase();
+  const g   = String(grade || '').replace(/\D/g, '');
+  const rawG = String(grade || '');
+
+  // Try most-specific keys first
+  const keys = [
+    `${g}_${du}`, `Grade ${g}_${du}`, `Grade_${g}_${du}`,
+    `${rawG}_${du}`, `${g}_${day}`, `Grade ${g}_${day}`, `${rawG}_${day}`
+  ];
+  for (const k of keys) {
+    if (ecaSchedule[k] && Object.keys(ecaSchedule[k]).length) return ecaSchedule[k];
+  }
+
+  // Case-insensitive fallback (must match both grade and day)
+  const found = Object.keys(ecaSchedule).find(k => {
+    const ku = k.toUpperCase();
+    return ku.includes(du) && (ku.includes(g) || ku.includes(rawG.toUpperCase()));
+  });
+  return found ? (ecaSchedule[found] || {}) : {};
+}
+
+// ─── SUBJECT DURATION CALCULATOR ─────────────────────────────────────────────
+
 /**
- * Calculate per-period duration in minutes for a subject:
- * Formula: Period Duration = Total Weekly Duration (minutes) / Weekly Periods Count
- * Then round to nearest 5 minutes and enforce minimum 15 minutes.
+ * Per-period duration = weeklyDuration / weeklyPeriods, rounded to 5 mins.
+ * weeklyDuration is stored as 'HH:MM' (e.g. '06:00' = 360 mins).
  */
 export function getSubjectPeriodDurationMins(subj) {
-  const count = Number(subj.weeklyPeriods) || 4;
-  let totalMins = 240; // Default 4 hours total per week
-
+  const periods = Math.max(1, Number(subj.weeklyPeriods) || 6);
+  let totalMins = 360; // default 6 hours / week
   if (subj.weeklyDuration) {
-    const str = String(subj.weeklyDuration).trim().toLowerCase();
-    if (str.includes(':')) {
-      const [h, m] = str.split(':').map(Number);
-      totalMins = (h || 0) * 60 + (m || 0);
-    } else if (str.includes('hour')) {
-      const hrs = parseFloat(str) || 4;
-      totalMins = Math.round(hrs * 60);
-    } else if (str.includes('min')) {
-      const mins = parseInt(str) || 180;
-      totalMins = mins;
-    } else {
-      const num = parseFloat(str);
-      if (!isNaN(num)) totalMins = num > 20 ? num : Math.round(num * 60);
+    const parsed = parseDur(subj.weeklyDuration);
+    if (parsed && parsed > 0) totalMins = parsed;
+  }
+  return Math.max(5, r5(totalMins / periods));
+}
+
+// ─── DYNAMIC PERIODS (used by Bell Schedule display) ─────────────────────────
+
+export function calculateDynamicPeriodsFromBellConfig(cfg = {}) {
+  const sS  = parseTime(cfg.schoolStartTime    || '08:30 AM');
+  const mb1 = parseTime(cfg.morningBreakStart  || '10:00 AM');
+  const mb2 = parseTime(cfg.morningBreakEnd    || '10:15 AM');
+  const lb1 = parseTime(cfg.lunchBreakStart    || '11:45 AM');
+  const lb2 = parseTime(cfg.lunchBreakEnd      || '12:30 PM');
+  const ab1 = parseTime(cfg.afternoonBreakStart|| '02:00 PM');
+  const ab2 = parseTime(cfg.afternoonBreakEnd  || '02:15 PM');
+  const sE  = parseTime(cfg.schoolEndTime      || '03:45 PM');
+
+  const periods = [];
+  let id = 1;
+
+  function addSession(start, end, isFirst) {
+    if (end <= start) return;
+    let cur = start;
+    if (isFirst) {
+      const pf = Math.min(15, end - start - 5);
+      if (pf > 0) {
+        periods.push({ id: id++, name: 'Physical Fitness', startTime: fmt(cur), endTime: fmt(cur + pf), time: `${fmt(cur)} - ${fmt(cur + pf)}` });
+        cur += pf;
+      }
+    }
+    const rem = end - cur;
+    if (rem <= 0) return;
+    const n = rem >= 60 ? 2 : 1;
+    const d = r5(rem / n);
+    for (let i = 0; i < n; i++) {
+      const e = (i === n - 1) ? end : cur + d;
+      periods.push({ id: id++, name: `Period ${id - 1}`, startTime: fmt(cur), endTime: fmt(e), time: `${fmt(cur)} - ${fmt(e)}` });
+      cur = e;
     }
   }
 
-  const rawPerPeriod = totalMins / Math.max(1, count);
-  const rounded = roundTo5(rawPerPeriod);
-  // Enforce minimum 15 minutes
-  return Math.max(MIN_PERIOD_MINS, rounded);
-}
-
-/**
- * Dynamically calculate 8 teaching periods from Master Bell Milestones
- */
-export function calculateDynamicPeriodsFromBellConfig(config = {}) {
-  const sStart = parseTimeToMinutes(config.schoolStartTime || '09:15 AM');
-  const mBStart = parseTimeToMinutes(config.morningBreakStart || '10:45 AM');
-  const mBEnd = parseTimeToMinutes(config.morningBreakEnd || '11:00 AM');
-  const lStart = parseTimeToMinutes(config.lunchBreakStart || '11:45 AM');
-  const lEnd = parseTimeToMinutes(config.lunchBreakEnd || '12:30 PM');
-  const aBStart = parseTimeToMinutes(config.afternoonBreakStart || '02:30 PM');
-  const aBEnd = parseTimeToMinutes(config.afternoonBreakEnd || '02:45 PM');
-  const sEnd = parseTimeToMinutes(config.schoolEndTime || '03:40 PM');
-
-  const periods = [];
-
-  const s1Mins = mBStart - sStart;
-  const dur1 = roundTo5(s1Mins / 2);
-  periods.push({ id: 1, name: 'Period 1', startTime: formatMinutesTo12Hr(sStart), endTime: formatMinutesTo12Hr(sStart + dur1), time: `${formatMinutesTo12Hr(sStart)} - ${formatMinutesTo12Hr(sStart + dur1)}` });
-  periods.push({ id: 2, name: 'Period 2', startTime: formatMinutesTo12Hr(sStart + dur1), endTime: formatMinutesTo12Hr(mBStart), time: `${formatMinutesTo12Hr(sStart + dur1)} - ${formatMinutesTo12Hr(mBStart)}` });
-
-  const s2Mins = lStart - mBEnd;
-  const dur2 = roundTo5(s2Mins / 2);
-  periods.push({ id: 3, name: 'Period 3', startTime: formatMinutesTo12Hr(mBEnd), endTime: formatMinutesTo12Hr(mBEnd + dur2), time: `${formatMinutesTo12Hr(mBEnd)} - ${formatMinutesTo12Hr(mBEnd + dur2)}` });
-  periods.push({ id: 4, name: 'Period 4', startTime: formatMinutesTo12Hr(mBEnd + dur2), endTime: formatMinutesTo12Hr(lStart), time: `${formatMinutesTo12Hr(mBEnd + dur2)} - ${formatMinutesTo12Hr(lStart)}` });
-
-  const s3Mins = aBStart - lEnd;
-  const dur3 = roundTo5(s3Mins / 2);
-  periods.push({ id: 5, name: 'Period 5', startTime: formatMinutesTo12Hr(lEnd), endTime: formatMinutesTo12Hr(lEnd + dur3), time: `${formatMinutesTo12Hr(lEnd)} - ${formatMinutesTo12Hr(lEnd + dur3)}` });
-  periods.push({ id: 6, name: 'Period 6', startTime: formatMinutesTo12Hr(lEnd + dur3), endTime: formatMinutesTo12Hr(aBStart), time: `${formatMinutesTo12Hr(lEnd + dur3)} - ${formatMinutesTo12Hr(aBStart)}` });
-
-  const s4Mins = sEnd - aBEnd;
-  const dur4 = roundTo5(s4Mins / 2);
-  periods.push({ id: 7, name: 'Period 7', startTime: formatMinutesTo12Hr(aBEnd), endTime: formatMinutesTo12Hr(aBEnd + dur4), time: `${formatMinutesTo12Hr(aBEnd)} - ${formatMinutesTo12Hr(aBEnd + dur4)}` });
-  periods.push({ id: 8, name: 'Period 8', startTime: formatMinutesTo12Hr(aBEnd + dur4), endTime: formatMinutesTo12Hr(sEnd), time: `${formatMinutesTo12Hr(aBEnd + dur4)} - ${formatMinutesTo12Hr(sEnd)}` });
-
+  addSession(sS, mb1, true);
+  addSession(mb2, lb1, false);
+  addSession(lb2, ab1, false);
+  addSession(ab2, sE, false);
   return periods;
 }
 
+// ─── INTERVAL CONFLICT CHECKER ───────────────────────────────────────────────
+
 /**
- * Smart Session-Window Packing Timetable Generator Algorithm
- *
- * Rules:
- * 1. Breaks are SACRED & IMMUTABLE — no subject spills past a break boundary.
- * 2. Period Duration = round5(Total Weekly Duration / Weekly Periods Count), minimum 15 min.
- * 3. Every minute from start to end is utilized — no gaps, no waste.
- * 4. Period 1 is ALWAYS Physical Fitness (15 min).
- * 5. Locked ECA Non-Academic Schedule per Grade (placed in Session 3, post-lunch).
- * 6. MAX 1 period per subject per day for each class section.
- * 7. Each day gets a DIFFERENT shuffled subject order so timetables vary day-to-day.
- * 8. All times are rounded to 5-minute increments for clean scheduling.
+ * Check if two time intervals [startA, endA] and [startB, endB] overlap.
  */
-export function generateAutoTimetable({
-  faculties = [],
-  venues = [],
-  classes = [],
-  subjects = [],
-  ecaSchedule = {},
-  bellConfig = {},
-  targetClassId = 'all',
-  targetGrade = 'all',
-  existingTimetable = []
-}) {
-  const timetable = [];
-  const facultyBusy = {};
-  const venueBusy = {};
+function isTimeOverlap(startA, endA, startB, endB) {
+  return Math.max(startA, startB) < Math.min(endA, endB);
+}
 
-  let conflictCount = 0;
+/**
+ * Check if a faculty is busy during [startMins, endMins] on a specific day.
+ */
+function isFacultyBusyInInterval(facId, day, startMins, endMins, facultyBusyMap) {
+  if (!facId) return false;
+  const key = `${facId}_${day}`;
+  const intervals = facultyBusyMap[key];
+  if (!Array.isArray(intervals) || !intervals.length) return false;
+  return intervals.some(inv => isTimeOverlap(startMins, endMins, inv.start, inv.end));
+}
 
-  // Extract Bell Milestones (Minutes from Midnight)
-  const sStart = parseTimeToMinutes(bellConfig.schoolStartTime || '09:15 AM');
-  const mBStart = parseTimeToMinutes(bellConfig.morningBreakStart || '10:45 AM');
-  const mBEnd = parseTimeToMinutes(bellConfig.morningBreakEnd || '11:00 AM');
-  const lStart = parseTimeToMinutes(bellConfig.lunchBreakStart || '11:45 AM');
-  const lEnd = parseTimeToMinutes(bellConfig.lunchBreakEnd || '12:30 PM');
-  const aBStart = parseTimeToMinutes(bellConfig.afternoonBreakStart || '02:30 PM');
-  const aBEnd = parseTimeToMinutes(bellConfig.afternoonBreakEnd || '02:45 PM');
-  const sEnd = parseTimeToMinutes(bellConfig.schoolEndTime || '03:40 PM');
+/**
+ * Register a busy time interval for a faculty on a specific day.
+ */
+function recordFacultyBusyInterval(facId, day, startMins, endMins, facultyBusyMap) {
+  if (!facId) return;
+  const key = `${facId}_${day}`;
+  if (!facultyBusyMap[key]) facultyBusyMap[key] = [];
+  facultyBusyMap[key].push({ start: startMins, end: endMins });
+}
 
-  // Helper to extract grade string
-  const getGradeStr = (c) => {
-    if (!c) return '4';
-    if (c.gradeName !== undefined && c.gradeName !== null) return String(c.gradeName).replace('Grade ', '').trim();
-    if (c.gradeId !== undefined && c.gradeId !== null) return String(c.gradeId).replace('Grade ', '').trim();
-    if (c.grade !== undefined && c.grade !== null) {
-      if (typeof c.grade === 'object') return String(c.grade.name || c.grade.id || '4').replace('Grade ', '').trim();
-      return String(c.grade).replace('Grade ', '').trim();
-    }
-    if (c.name) {
-      const match = String(c.name).match(/(?:Grade\s*)?(\d+)/i);
-      if (match) return match[1];
-    }
-    return '4';
+/**
+ * Check if a venue is busy during [startMins, endMins] on a specific day.
+ */
+function isVenueBusyInInterval(venueId, day, startMins, endMins, venueBusyMap) {
+  if (!venueId) return false;
+  const key = `${venueId}_${day}`;
+  const intervals = venueBusyMap[key];
+  if (!Array.isArray(intervals) || !intervals.length) return false;
+  return intervals.some(inv => isTimeOverlap(startMins, endMins, inv.start, inv.end));
+}
+
+/**
+ * Register a busy time interval for a venue on a specific day.
+ */
+function recordVenueBusyInterval(venueId, day, startMins, endMins, venueBusyMap) {
+  if (!venueId) return;
+  const key = `${venueId}_${day}`;
+  if (!venueBusyMap[key]) venueBusyMap[key] = [];
+  venueBusyMap[key].push({ start: startMins, end: endMins });
+}
+
+// ─── FACULTY MATCHER ─────────────────────────────────────────────────────────
+
+export function findBestFacultyForSubject(subj, grade, faculties = [], day = '', startMins = 0, endMins = 0, facultyBusyMap = {}) {
+  if (!subj) return { id: null, name: '' };
+  const gNum = String(grade || '').replace(/\D/g, '');
+
+  const teachesSubject = (f) => {
+    if (!f) return false;
+    if (f.primarySubjectId && String(f.primarySubjectId) === String(subj.id)) return true;
+    if (Array.isArray(f.secondarySubjectIds) && f.secondarySubjectIds.map(String).includes(String(subj.id))) return true;
+    const sn = String(subj.name || '').toLowerCase().trim();
+    const sc = String(subj.code || '').toLowerCase().trim();
+    const fs = String(f.primarySubjectName || f.specialization || f.subject || f.subjectName || '').toLowerCase().trim();
+    if (fs && (fs === sn || fs === sc || fs.includes(sn) || sn.includes(fs))) return true;
+    return false;
   };
 
-  // Determine classes to process
-  let classesToProcess = classes;
-  if (targetClassId && targetClassId !== 'all') {
-    classesToProcess = classes.filter(c => c.id === targetClassId);
-  } else if (targetGrade && targetGrade !== 'all') {
-    classesToProcess = classes.filter(c => getGradeStr(c) === String(targetGrade));
+  const teachesGrade = (f) => {
+    if (!f) return false;
+    if (Array.isArray(f.grades) && f.grades.length > 0) {
+      return f.grades.some(g => {
+        const gn = String(typeof g === 'object' ? (g.id || g.name) : g).replace(/\D/g, '');
+        return gn === gNum || String(g).toLowerCase() === 'all' || String(g).toLowerCase() === `grade ${gNum}`;
+      });
+    }
+    return false;
+  };
+
+  const available = (f) => {
+    if (!f || !f.id) return true;
+    return !isFacultyBusyInInterval(f.id, day, startMins, endMins, facultyBusyMap);
+  };
+
+  // ONLY return a faculty if they teach subject AND teach grade AND ARE AVAILABLE (not busy in any class)
+  const match = faculties.find(f => teachesSubject(f) && teachesGrade(f) && available(f));
+  if (match) return match;
+
+  // STRICT CONSTRAINT: Never return a busy faculty to prevent faculty clashes!
+  return { id: null, name: '' };
+}
+
+// ─── SESSION FILLER ───────────────────────────────────────────────────────────
+
+/**
+ * Fill a time session [sessionStart, sessionEnd] with academic subjects.
+ *
+ * Rules:
+ *  • Pick subjects NOT already used today (usedIdsToday Set)
+ *  • Prioritize subjects whose assigned faculty is AVAILABLE at that time interval
+ *  • Use exact per-period duration from master course
+ *
+ * @param {number}  sessionStart     minutes from midnight
+ * @param {number}  sessionEnd       minutes from midnight (must reach exactly)
+ * @param {Array}   subjectPool      ordered subject objects
+ * @param {Set}     usedIdsToday     Set of subject ids already placed today
+ * @param {string}  grade            grade string e.g. '5'
+ * @param {Array}   faculties        all faculties list
+ * @param {string}  day              day string e.g. 'Monday'
+ * @param {Object}  facultyBusyMap   busy intervals map
+ * @returns {Array} placed block objects
+ */
+function fillSession(sessionStart, sessionEnd, subjectPool, usedIdsToday, grade = '', faculties = [], day = '', facultyBusyMap = {}) {
+  const blocks = [];
+  const totalDuration = sessionEnd - sessionStart;
+  if (totalDuration <= 0 || !subjectPool || !subjectPool.length) return blocks;
+
+  let cursor = sessionStart;
+  let remaining = totalDuration;
+  let attemptCount = 0;
+  const maxAttempts = 20;
+
+  while (remaining > 0 && attemptCount < maxAttempts) {
+    attemptCount++;
+
+    // Filter for subjects not yet used today; if all have been used today, fall back to entire pool
+    let candidates = subjectPool.filter(s => !usedIdsToday.has(s.id));
+    if (candidates.length === 0) {
+      candidates = subjectPool;
+    }
+
+    // Smart candidate selection: prioritize subject whose faculty is FREE at [cursor, cursor + duration]
+    let chosenSubj = candidates.find(s => {
+      const fac = findBestFacultyForSubject(s.data, grade, faculties, day, cursor, cursor + s.duration, facultyBusyMap);
+      return Boolean(fac && fac.id);
+    });
+
+    // Fallback: pick sequentially from candidates if no subject has a free faculty right now
+    if (!chosenSubj) {
+      chosenSubj = candidates[(attemptCount - 1) % candidates.length];
+    }
+    if (!chosenSubj) break;
+
+    // Use subject's natural duration, or remaining time if remaining is smaller
+    let blockDur = Math.min(chosenSubj.duration, remaining);
+
+    // If remaining time after this block would be less than 10 mins, absorb it into this block to avoid tiny residual gaps
+    if (remaining - blockDur < 10 && remaining - blockDur > 0) {
+      blockDur = remaining;
+    }
+
+    if (blockDur <= 0) break;
+
+    blocks.push({
+      kind: 'ACADEMIC',
+      subjectId: chosenSubj.id,
+      name: chosenSubj.name,
+      subjectCode: chosenSubj.code,
+      subjectColor: chosenSubj.color,
+      duration: blockDur,
+      startMins: cursor,
+      endMins: cursor + blockDur,
+      start: fmt(cursor),
+      end: fmt(cursor + blockDur),
+      subject: chosenSubj.data
+    });
+
+    usedIdsToday.add(chosenSubj.id);
+    cursor += blockDur;
+    remaining -= blockDur;
   }
 
-  // Preserve existing slots for classes NOT being re-generated
-  const preservedSlots = existingTimetable.filter(
-    t => !classesToProcess.some(c => c.id === t.classId)
-  );
-  preservedSlots.forEach(slot => {
-    if (slot.facultyId) facultyBusy[`${slot.facultyId}_${slot.day}_${slot.startTime}`] = true;
-    if (slot.venueId) venueBusy[`${slot.venueId}_${slot.day}_${slot.startTime}`] = true;
-    timetable.push(slot);
+  // Safety: if any tiny gap remains, stretch the last placed block to reach sessionEnd exactly
+  if (remaining > 0 && blocks.length > 0) {
+    const last = blocks[blocks.length - 1];
+    last.duration += remaining;
+    last.endMins = sessionEnd;
+    last.end = fmt(sessionEnd);
+  }
+
+  return blocks;
+}
+
+// ─── MAIN GENERATOR ───────────────────────────────────────────────────────────
+
+/**
+ * Generate the full master timetable.
+ *
+ * @param {Object} params
+ * @param {Array}  params.faculties
+ * @param {Array}  params.venues
+ * @param {Array}  params.classes
+ * @param {Array}  params.subjects
+ * @param {Object} params.ecaSchedule
+ * @param {Object} params.bellConfig
+ * @param {string} params.targetClassId  ('all' or specific class id)
+ * @param {string} params.targetGrade    ('all' or grade number string)
+ * @param {Array}  params.existingTimetable
+ */
+export function generateAutoTimetable(params) {
+  const {
+    faculties       = [],
+    venues          = [],
+    classes         = [],
+    subjects        = [],
+    ecaSchedule     = {},
+    bellConfig      = {},
+    targetClassId   = 'all',
+    targetGrade     = 'all',
+    existingTimetable = []
+  } = params;
+
+  // ── Parse bell times (all in minutes from midnight) ──
+  const sStartM = parseTime(bellConfig.schoolStartTime    || '08:30 AM');
+  const mBsM    = parseTime(bellConfig.morningBreakStart  || '10:00 AM');
+  const mBeM    = parseTime(bellConfig.morningBreakEnd    || '10:15 AM');
+  const lBsM    = parseTime(bellConfig.lunchBreakStart    || '11:45 AM');
+  const lBeM    = parseTime(bellConfig.lunchBreakEnd      || '12:30 PM');
+  const aBsM    = parseTime(bellConfig.afternoonBreakStart|| '02:00 PM');
+  const aBeM    = parseTime(bellConfig.afternoonBreakEnd  || '02:15 PM');
+  const sEndM   = parseTime(bellConfig.schoolEndTime      || '03:45 PM');
+
+  const timetable      = [];
+  const facultyBusyMap = {};
+  const venueBusyMap   = {};
+  let   conflicts      = 0;
+
+  // ── Determine which classes to process ──
+  let toProcess = classes;
+  if (targetClassId && String(targetClassId).toLowerCase() !== 'all') {
+    toProcess = classes.filter(c => String(c.id) === String(targetClassId));
+  } else if (targetGrade && String(targetGrade).toLowerCase() !== 'all') {
+    const tg = String(targetGrade).replace(/grade\s*/i, '').trim();
+    toProcess = classes.filter(c => getGrade(c) === tg);
+  }
+
+  // Preserve slots from classes NOT being regenerated & record their busy intervals
+  const preserved = existingTimetable.filter(t => !toProcess.some(c => String(c.id) === String(t.classId)));
+  preserved.forEach(s => {
+    const sStart = s.startMins != null ? s.startMins : parseTime(s.startTime);
+    const sEnd   = s.endMins   != null ? s.endMins   : (sStart + (s.durationMins || 45));
+    if (s.facultyId) recordFacultyBusyInterval(s.facultyId, s.day, sStart, sEnd, facultyBusyMap);
+    if (s.venueId)   recordVenueBusyInterval(s.venueId, s.day, sStart, sEnd, venueBusyMap);
+    timetable.push(s);
   });
 
-  // Process each targeted class
-  classesToProcess.forEach((cls) => {
-    const classGrade = getGradeStr(cls);
+  // ── Process each class ──
+  toProcess.forEach(cls => {
+    const grade = getGrade(cls);
 
-    // Resolve assigned home classroom venue for this class section
-    const homeVenue = (cls.homeVenueId && venues.find(v => String(v.id) === String(cls.homeVenueId)))
-      || (cls.homeVenueRoomNo && venues.find(v => String(v.roomNo).trim() === String(cls.homeVenueRoomNo).trim()))
-      || (cls.roomNo && venues.find(v => String(v.roomNo).trim() === String(cls.roomNo).trim()))
-      || venues.find(v => (v.type === 'normal' || !v.type) && String(v.name).toLowerCase().includes(String(cls.name || '').toLowerCase()))
-      || venues.find(v => v.type === 'normal' || !v.type)
-      || venues[0]
-      || { id: `v_${cls.id}`, name: `${cls.name} Classroom`, roomNo: cls.homeVenueRoomNo || 'Room 101', type: 'normal' };
+    // Resolve home classroom venue
+    const homeVenue =
+      venues.find(v => String(v.id) === String(cls.homeVenueId)) ||
+      venues.find(v => cls.homeVenueRoomNo && String(v.roomNo).trim() === String(cls.homeVenueRoomNo).trim()) ||
+      venues.find(v => v.type === 'normal' || !v.type) ||
+      venues[0] ||
+      { id: null, name: `${cls.name} Room`, roomNo: '101', type: 'normal' };
 
-    // Filter subjects applicable to this grade
+    // Subjects for this grade
     const gradeSubjects = subjects.filter(s => {
-      if (!s.grade || s.grade === 'all') return true;
-      const sg = String(s.grade).replace('Grade ', '').trim();
-      return sg === classGrade || (Array.isArray(s.grades) && s.grades.includes(classGrade));
+      if (!s.grade || String(s.grade).toLowerCase() === 'all') return true;
+      return String(s.grade).replace(/grade\s*/i, '').trim() === grade;
     });
     const activeSubjects = gradeSubjects.length > 0 ? gradeSubjects : subjects;
 
-    // Track how many times each subject has been allocated across the week
-    const weeklySubjectAllocCount = {};
+    // Build ordered subject pool: highest weeklyPeriods = highest priority
+    const basePool = [...activeSubjects]
+      .sort((a, b) => (Number(b.weeklyPeriods) || 6) - (Number(a.weeklyPeriods) || 6))
+      .map(s => ({
+        id:       s.id,
+        name:     s.name,
+        code:     s.code || '',
+        color:    s.color || '#2563eb',
+        duration: getSubjectPeriodDurationMins(s),
+        data:     s
+      }));
 
+    // Per-class seed for deterministic shuffle
+    const classSeed = (cls.id || '').split('').reduce((a, c) => a + c.charCodeAt(0), 42);
+
+    // Helper: convert a placed block → timetable slot object
+    let periodCounter = 0;
+    const toSlot = (block, cls, day, fac, venue) => ({
+      id:           `slot_${cls.id}_${day}_${++periodCounter}`,
+      classId:      cls.id,
+      className:    cls.name,
+      day,
+      period:       periodCounter,
+      periodName:   block.kind === 'BREAK' || block.kind === 'LUNCH'
+                    ? block.name
+                    : `Period ${periodCounter}`,
+      periodTime:   `${block.start} - ${block.end}`,
+      startTime:    block.start,
+      endTime:      block.end,
+      startMins:    block.startMins,
+      endMins:      block.endMins,
+      durationMins: block.duration,
+      subjectId:    block.subjectId   || null,
+      subjectName:  block.name,
+      subjectCode:  block.subjectCode || '',
+      subjectColor: block.subjectColor|| '#2563eb',
+      facultyId:    fac ? fac.id   : null,
+      facultyName:  fac ? fac.name : '',
+      venueId:      venue ? venue.id      : null,
+      venueName:    venue ? venue.name    : '',
+      venueRoomNo:  venue ? venue.roomNo  : '',
+      venueType:    block.venueType || (venue ? venue.type : 'normal'),
+      isConflict:   false,
+      conflictReason: null,
+      ecaTag:       block.ecaTag || null,
+      blockKind:    block.kind
+    });
+
+    // ── Process each day ──
     DAYS.forEach((day, dayIndex) => {
-      const dayUpper = String(day).toUpperCase();
-      const gradeKey = `${classGrade}_${dayUpper}`;
-      const dayEcaMap = ecaSchedule[gradeKey] || ecaSchedule[dayUpper] || ecaSchedule[day] || {};
+      periodCounter = 0; // reset per day
+      const ecaMap = getEcaMap(ecaSchedule, grade, day);
 
-      // Collect active ECA verticals for this grade & day
-      const activeEcaList = [];
-      if (typeof dayEcaMap === 'object') {
-        Object.entries(dayEcaMap).forEach(([vertName, vertData]) => {
-          // Physical Fitness is strictly reserved for Period 1 morning; do not duplicate in afternoon ECA
-          if (vertName.toLowerCase().includes('physical fitness') || vertName.toLowerCase().includes('fitness')) {
-            return;
-          }
-          if (vertData && (vertData.active || (vertData.label && vertData.label !== 'No' && !vertData.label.startsWith('No')))) {
-            const target = vertData.target || 'All';
-            const isBoth = target === 'Both' || (vertData.label && (vertData.label.includes('Both') || vertData.label.includes('Boys & Girls')));
+      // ── Determine Physical Fitness duration ──
+      let pfDur = 15; // default 15 mins
+      const pfKey = Object.keys(ecaMap).find(k =>
+        k.toLowerCase().includes('physical fitness') || k.toLowerCase().includes('fitness')
+      );
+      if (pfKey && ecaMap[pfKey]) {
+        const parsed = parseDur(ecaMap[pfKey].duration);
+        if (parsed && parsed > 0) pfDur = parsed;
+      }
+      // Clamp: must fit before morning break with at least 5 mins for academics
+      pfDur = Math.max(5, Math.min(pfDur, mBsM - sStartM - 5));
 
-            if (isBoth) {
-              activeEcaList.push({
-                name: vertName,
-                label: `Yes - Boys (${vertData.duration || '45 mins'})`,
-                duration: vertData.duration || '45 mins',
-                color: vertData.color || '#d97706',
-                target: 'Boys',
-                displayName: `${vertName} (Boys)`
-              });
-              activeEcaList.push({
-                name: vertName,
-                label: `Yes - Girls (${vertData.duration || '45 mins'})`,
-                duration: vertData.duration || '45 mins',
-                color: vertData.color || '#d97706',
-                target: 'Girls',
-                displayName: `${vertName} (Girls)`
-              });
-            } else {
-              activeEcaList.push({
-                name: vertName,
-                label: vertData.label || vertName,
-                duration: vertData.duration || '45 mins',
-                color: vertData.color || '#d97706',
-                target,
-                displayName: target && target !== 'All' ? `${vertName} (${target})` : vertName
-              });
-            }
+      // ── Build today's subject pool (shuffled for variety) ──
+      const daySeed = classSeed * 31 + dayIndex * 17 + day.charCodeAt(0);
+      const dayPool = seededShuffle(basePool, daySeed);
+
+      // Track which subjects have been placed today (no duplicates)
+      const usedToday = new Set();
+
+      // ── COLLECT timeline blocks for this day ──
+      const dayBlocks = [];
+
+      // ── 1. PHYSICAL FITNESS (always first block) ──
+      const pfStart = sStartM;
+      const pfEnd   = sStartM + pfDur;
+      dayBlocks.push({
+        kind: 'ANCHOR',
+        name: 'Physical Fitness',
+        subjectId: 'sub_physical_fitness',
+        subjectCode: 'FITNESS',
+        subjectColor: '#059669',
+        venueType: 'sports',
+        duration: pfDur,
+        start: fmt(pfStart),
+        end:   fmt(pfEnd),
+        startMins: pfStart,
+        endMins:   pfEnd,
+        ecaTag: null
+      });
+
+      // ── 2. SESSION A: physFitnessEnd → morningBreakStart ──
+      const sA = fillSession(pfEnd, mBsM, dayPool, usedToday, grade, faculties, day, facultyBusyMap);
+      dayBlocks.push(...sA);
+
+      // ── 3. MORNING BREAK (fixed) ──
+      dayBlocks.push({
+        kind: 'BREAK',
+        name: 'Morning Break',
+        subjectId: 'break_morning',
+        subjectCode: 'BREAK',
+        subjectColor: '#f59e0b',
+        venueType: 'break',
+        duration: mBeM - mBsM,
+        start: fmt(mBsM), end: fmt(mBeM),
+        startMins: mBsM, endMins: mBeM, ecaTag: 'Morning Break'
+      });
+
+      // ── 4. SESSION B: morningBreakEnd → lunchBreakStart ──
+      const sB = fillSession(mBeM, lBsM, dayPool, usedToday, grade, faculties, day, facultyBusyMap);
+      dayBlocks.push(...sB);
+
+      // ── 5. LUNCH BREAK (fixed) ──
+      dayBlocks.push({
+        kind: 'LUNCH',
+        name: 'Lunch Break',
+        subjectId: 'break_lunch',
+        subjectCode: 'LUNCH',
+        subjectColor: '#ef4444',
+        venueType: 'lunch',
+        duration: lBeM - lBsM,
+        start: fmt(lBsM), end: fmt(lBeM),
+        startMins: lBsM, endMins: lBeM, ecaTag: 'Lunch Break'
+      });
+
+      // ── 6. ECA BLOCKS (post-lunch, clamped to afternoonBreakStart) ──
+      let ecaCursor = lBeM;
+
+      // Sort ECA entries so that 'English Song' is placed first right next to Lunch Break
+      const ecaEntries = Object.entries(ecaMap).sort(([nameA], [nameB]) => {
+        const isA_Song = nameA.toLowerCase().includes('english song') || nameA.toLowerCase().includes('song');
+        const isB_Song = nameB.toLowerCase().includes('english song') || nameB.toLowerCase().includes('song');
+        if (isA_Song && !isB_Song) return -1;
+        if (!isA_Song && isB_Song) return 1;
+        return 0;
+      });
+
+      ecaEntries.forEach(([vertName, vertData]) => {
+        // Skip Physical Fitness — already placed as block #1
+        if (vertName.toLowerCase().includes('fitness') || vertName.toLowerCase().includes('physical fitness')) return;
+
+        // Stop if no more room before Afternoon Break
+        if (ecaCursor >= aBsM) return;
+
+        // Check if this ECA is active
+        const isActive = vertData && (
+          vertData.active === true ||
+          (vertData.label && vertData.label !== 'No' && !String(vertData.label).startsWith('No'))
+        );
+        if (!isActive) return;
+
+        let ecaDur = parseDur(vertData.duration) || 30;
+        ecaDur = Math.max(5, r5(ecaDur));
+
+        // Clamp: don't push past Afternoon Break
+        const remaining = aBsM - ecaCursor;
+        if (remaining <= 0) return;
+        ecaDur = Math.min(ecaDur, remaining);
+
+        const target  = vertData.target || 'All';
+        const isBoth  = target === 'Both' ||
+          (vertData.label && (vertData.label.includes('Both') || vertData.label.includes('Boys & Girls')));
+
+        if (isBoth) {
+          const halfAvail = Math.floor((aBsM - ecaCursor) / 2);
+          const boys = Math.min(ecaDur, halfAvail);
+          if (boys >= 5) {
+            dayBlocks.push({
+              kind: 'ECA_ANCHOR', name: `${vertName} (Boys)`,
+              subjectId: `eca_${vertName.toLowerCase().replace(/\s+/g,'_')}_boys`,
+              subjectCode: 'ECA', subjectColor: vertData.color || '#d97706', venueType: 'eca',
+              duration: boys, start: fmt(ecaCursor), end: fmt(ecaCursor + boys),
+              startMins: ecaCursor, endMins: ecaCursor + boys, ecaTag: `${vertName} (Boys)`
+            });
+            ecaCursor += boys;
           }
-        });
+          const girlsAvail = aBsM - ecaCursor;
+          const girls = Math.min(ecaDur, girlsAvail);
+          if (girls >= 5 && ecaCursor < aBsM) {
+            dayBlocks.push({
+              kind: 'ECA_ANCHOR', name: `${vertName} (Girls)`,
+              subjectId: `eca_${vertName.toLowerCase().replace(/\s+/g,'_')}_girls`,
+              subjectCode: 'ECA', subjectColor: vertData.color || '#d97706', venueType: 'eca',
+              duration: girls, start: fmt(ecaCursor), end: fmt(ecaCursor + girls),
+              startMins: ecaCursor, endMins: ecaCursor + girls, ecaTag: `${vertName} (Girls)`
+            });
+            ecaCursor += girls;
+          }
+        } else {
+          const displayName = (target && target !== 'All') ? `${vertName} (${target})` : vertName;
+          dayBlocks.push({
+            kind: 'ECA_ANCHOR', name: displayName,
+            subjectId: `eca_${vertName.toLowerCase().replace(/\s+/g,'_')}_${target.toLowerCase()}`,
+            subjectCode: 'ECA', subjectColor: vertData.color || '#d97706', venueType: 'eca',
+            duration: ecaDur, start: fmt(ecaCursor), end: fmt(ecaCursor + ecaDur),
+            startMins: ecaCursor, endMins: ecaCursor + ecaDur, ecaTag: displayName
+          });
+          ecaCursor += ecaDur;
+        }
+      });
+
+      // ── 7. SESSION C: remaining post-ECA gap → afternoonBreakStart ──
+      if (ecaCursor < aBsM) {
+        const sC = fillSession(ecaCursor, aBsM, dayPool, usedToday, grade, faculties, day, facultyBusyMap);
+        dayBlocks.push(...sC);
       }
 
-      // Track remaining ECA slots to place for this day
-      const pendingEcaQueue = [...activeEcaList];
-
-      // ─── Fresh shuffled pool PER DAY using a different seed ───
-      // Seed varies by class + day so each day gets a DIFFERENT subject order
-      const classSeed = cls.id ? cls.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) : 42;
-      const daySeed = classSeed * 100 + (dayIndex + 1) * 17 + dayIndex * 37;
-
-      // Build a full reference list of all subjects with their computed durations & faculties
-      const allSubjectEntries = activeSubjects.map(subj => {
-        const fac = findBestFacultyForSubject(subj, classGrade, faculties, '', '', facultyBusy);
-        return {
-          subject: subj,
-          faculty: fac,
-          periodDurationMins: getSubjectPeriodDurationMins(subj)
-        };
+      // ── 8. AFTERNOON BREAK (fixed) ──
+      dayBlocks.push({
+        kind: 'BREAK',
+        name: 'Afternoon Break',
+        subjectId: 'break_afternoon',
+        subjectCode: 'BREAK',
+        subjectColor: '#f59e0b',
+        venueType: 'break',
+        duration: aBeM - aBsM,
+        start: fmt(aBsM), end: fmt(aBeM),
+        startMins: aBsM, endMins: aBeM, ecaTag: 'Afternoon Break'
       });
 
-      // Shuffle the full reference list for this day
-      const shuffledAllSubjects = seededShuffle(allSubjectEntries, daySeed);
+      // ── 9. SESSION D: afternoonBreakEnd → schoolEnd ──
+      const sD = fillSession(aBeM, sEndM, dayPool, usedToday, grade, faculties, day, facultyBusyMap);
+      dayBlocks.push(...sD);
 
-      // Filter to quota-remaining subjects (Tier 1 priority)
-      const quotaPool = shuffledAllSubjects.filter(item => {
-        const key = item.subject.id;
-        const maxWeekly = Number(item.subject.weeklyPeriods) || 4;
-        return (weeklySubjectAllocCount[key] || 0) < maxWeekly;
-      });
+      // ── Convert blocks → timetable slot records ──
+      dayBlocks.forEach(block => {
+        let fac   = { id: null, name: '' };
+        let venue = homeVenue;
 
-      // Track which subjects are placed THIS day for this class
-      const todayPlaced = new Set();
-      let periodIndex = 1;
+        if (block.kind === 'ACADEMIC' && block.subject) {
+          fac = findBestFacultyForSubject(block.subject, grade, faculties, day, block.startMins, block.endMins, facultyBusyMap);
 
-      // Session windows bounded by sacred break milestones
-      const sessions = [
-        { id: 1, start: sStart, end: mBStart },
-        { id: 2, start: mBEnd, end: lStart },
-        { id: 3, start: lEnd, end: aBStart },
-        { id: 4, start: aBEnd, end: sEnd }
-      ];
-
-      sessions.forEach((session) => {
-        let currentMins = session.start;
-
-        while (currentMins < session.end) {
-          const remaining = session.end - currentMins;
-
-          // ─── RULE: Period 1 is ALWAYS Morning Physical Fitness (15 mins) ───
-          if (session.id === 1 && currentMins === session.start) {
-            const pfDur = 15;
-            const startStr = formatMinutesTo12Hr(currentMins);
-            const endStr = formatMinutesTo12Hr(currentMins + pfDur);
-
-            timetable.push({
-              id: `slot_${cls.id}_d${day}_p${periodIndex}`,
-              classId: cls.id, className: cls.name,
-              day, period: periodIndex++,
-              periodName: `Period ${periodIndex - 1}`,
-              periodTime: `${startStr} - ${endStr}`,
-              startTime: startStr, endTime: endStr,
-              durationMins: pfDur,
-              subjectId: 'sub_physical_fitness',
-              subjectName: 'Physical Fitness',
-              subjectCode: 'FITNESS',
-              subjectColor: '#059669',
-              facultyId: 'f_pe', facultyName: 'Physical Education Staff',
-              venueId: 'v_ground', venueName: 'Sports Ground / Playground',
-              venueRoomNo: 'Outdoor Ground', venueType: 'sports',
-              isConflict: false, conflictReason: null,
-              ecaTag: 'Morning Fitness'
-            });
-
-            currentMins += pfDur;
-            continue;
+          // Special venue if subject requires it
+          if (block.subject.requiredVenueType && block.subject.requiredVenueType !== 'normal') {
+            const sv = venues.find(v =>
+              v.type === block.subject.requiredVenueType &&
+              !isVenueBusyInInterval(v.id, day, block.startMins, block.endMins, venueBusyMap)
+            );
+            if (sv) venue = sv;
           }
 
-          // ─── RULE: ECA Slots in Session 3 (Post-Lunch) ───
-          if (session.id === 3 && pendingEcaQueue.length > 0) {
-            const nextEca = pendingEcaQueue.shift();
-            let ecaDur = 45;
-            const durStr = String(nextEca.duration || nextEca.label || '').toLowerCase();
-            const numMatch = durStr.match(/(\d+)/);
-            if (durStr.includes('1 hour') || durStr.includes('60')) {
-              ecaDur = 60;
-            } else if (numMatch) {
-              let parsed = parseInt(numMatch[1], 10);
-              if (durStr.includes('hour') || durStr.includes('hr')) parsed *= 60;
-              if (parsed > 0) ecaDur = parsed;
-            }
-            ecaDur = roundTo5(ecaDur);
-            ecaDur = Math.min(ecaDur, remaining);
-            ecaDur = Math.max(MIN_PERIOD_MINS, ecaDur);
+          // Check if faculty is double-booked across ANY class or grade
+          const isC = Boolean(fac.id && isFacultyBusyInInterval(fac.id, day, block.startMins, block.endMins, facultyBusyMap));
+          if (isC) conflicts++;
 
-            const startStr = formatMinutesTo12Hr(currentMins);
-            const endStr = formatMinutesTo12Hr(currentMins + ecaDur);
+          if (fac.id) recordFacultyBusyInterval(fac.id, day, block.startMins, block.endMins, facultyBusyMap);
+          if (venue.id) recordVenueBusyInterval(venue.id, day, block.startMins, block.endMins, venueBusyMap);
 
-            timetable.push({
-              id: `slot_${cls.id}_d${day}_p${periodIndex}`,
-              classId: cls.id, className: cls.name,
-              day, period: periodIndex++,
-              periodName: `Period ${periodIndex - 1}`,
-              periodTime: `${startStr} - ${endStr}`,
-              startTime: startStr, endTime: endStr,
-              durationMins: ecaDur,
-              subjectId: `eca_${nextEca.name.toLowerCase().replace(/\s+/g, '_')}_${nextEca.target.toLowerCase()}`,
-              subjectName: nextEca.displayName,
-              subjectCode: 'ECA',
-              subjectColor: nextEca.color || '#d97706',
-              facultyId: null, facultyName: 'ECA Instructor',
-              venueId: cls.homeVenueId || null, venueName: `${nextEca.name} Zone`,
-              venueRoomNo: `${nextEca.name} Area`, venueType: 'eca',
-              isConflict: false, conflictReason: null,
-              ecaTag: nextEca.displayName
-            });
+          const slot = toSlot(block, cls, day, fac, venue);
+          slot.isConflict = isC;
+          slot.conflictReason = isC ? `Faculty (${fac.name}) double-booked in another class` : null;
+          timetable.push(slot);
 
-            currentMins += ecaDur;
-            continue;
-          }
+        } else if (block.kind === 'ANCHOR') {
+          // Physical Fitness
+          fac   = { id: 'f_pe', name: 'Physical Education Staff' };
+          venue = venues.find(v => v.type === 'sports') ||
+                  { id: 'v_ground', name: 'Sports Ground', roomNo: 'Outdoor', type: 'sports' };
+          timetable.push(toSlot(block, cls, day, fac, venue));
 
-          // ─── RULE: Place Academic Subject (4-TIER FALLBACK WITH FACULTY & VENUE AVAILABILITY) ───
-          // Helper: try to find a fitting candidate from a list with strict faculty non-collision check
-          const findCandidate = (pool, checkQuota, checkToday, checkFacultyFree = true) => {
-            const startStr = formatMinutesTo12Hr(currentMins);
-            for (let i = 0; i < pool.length; i++) {
-              const cand = pool[i];
-              const subjId = cand.subject.id;
+        } else if (block.kind === 'ECA_ANCHOR') {
+          fac   = { id: null, name: 'ECA Instructor' };
+          venue = { id: null, name: `${block.name} Zone`, roomNo: `${block.name} Area`, type: 'eca' };
+          timetable.push(toSlot(block, cls, day, fac, venue));
 
-              if (checkToday && todayPlaced.has(subjId)) continue;
-
-              if (checkQuota) {
-                const maxWeekly = Number(cand.subject.weeklyPeriods) || 4;
-                if ((weeklySubjectAllocCount[subjId] || 0) >= maxWeekly) continue;
-              }
-
-              let dur = cand.periodDurationMins;
-              if (dur > remaining) {
-                if (remaining >= MIN_PERIOD_MINS) {
-                  dur = roundTo5(remaining);
-                  if (dur < MIN_PERIOD_MINS) dur = MIN_PERIOD_MINS;
-                  if (dur > remaining) continue;
-                } else {
-                  continue;
-                }
-              }
-
-              // Check if faculty for this subject is free at this slot across all sections
-              if (checkFacultyFree) {
-                const fac = findBestFacultyForSubject(cand.subject, classGrade, faculties, day, startStr, facultyBusy);
-                if (fac && fac.id && facultyBusy[`${fac.id}_${day}_${startStr}`]) {
-                  // Faculty is currently teaching another section! Skip candidate to avoid collision.
-                  continue;
-                }
-              }
-
-              return { ...cand, actualDuration: dur, poolIndex: i };
-            }
-            return null;
-          };
-
-          // TIER 1: Quota-respecting + unique today + faculty free for this section & time slot (ideal)
-          let chosen = findCandidate(quotaPool, true, true, true);
-
-          // TIER 2: Unique today + faculty free (when quotas exhausted)
-          if (!chosen) {
-            chosen = findCandidate(shuffledAllSubjects, false, true, true);
-          }
-
-          // TIER 3: Quota-respecting + faculty free (allow repeat subject today if needed)
-          if (!chosen) {
-            chosen = findCandidate(quotaPool, true, false, true);
-          }
-
-          // TIER 4: Allow repeats & allow conflict if no free faculty exists anywhere
-          if (!chosen) {
-            chosen = findCandidate(shuffledAllSubjects, false, false, false);
-          }
-
-          if (chosen) {
-            const subj = chosen.subject;
-            const dur = chosen.actualDuration;
-
-            const startStr = formatMinutesTo12Hr(currentMins);
-            const endStr = formatMinutesTo12Hr(currentMins + dur);
-
-            // Re-resolve best faculty for this specific subject, grade, day & time slot to guarantee subject matching and minimize conflicts
-            const fac = findBestFacultyForSubject(subj, classGrade, faculties, day, startStr, facultyBusy);
-
-            // Find venue: Normal academic subjects ALWAYS stay in the Class Section's Home Classroom!
-            let chosenVenue = null;
-            if (subj.requiredVenueType && subj.requiredVenueType !== 'normal') {
-              // Special facility required (e.g. Computer Lab, Science Lab, Auditorium)
-              chosenVenue = venues.find(v =>
-                v.type === subj.requiredVenueType && !venueBusy[`${v.id}_${day}_${startStr}`] && v.status === 'Available'
-              ) || venues.find(v => v.type === subj.requiredVenueType);
-            }
-
-            if (!chosenVenue) {
-              chosenVenue = homeVenue;
-            }
-
-            const isConflict = Boolean(fac.id && facultyBusy[`${fac.id}_${day}_${startStr}`]);
-            if (isConflict) conflictCount++;
-            if (fac.id) facultyBusy[`${fac.id}_${day}_${startStr}`] = true;
-            if (chosenVenue.id) venueBusy[`${chosenVenue.id}_${day}_${startStr}`] = true;
-
-            todayPlaced.add(subj.id);
-            weeklySubjectAllocCount[subj.id] = (weeklySubjectAllocCount[subj.id] || 0) + 1;
-
-            // Remove from quota pool if it was a Tier 1 pick
-            if (chosen.poolIndex !== undefined && chosen.poolIndex < quotaPool.length) {
-              const maxWeekly = Number(subj.weeklyPeriods) || 4;
-              if ((weeklySubjectAllocCount[subj.id] || 0) >= maxWeekly) {
-                // Remove all entries for this subject from quotaPool
-                for (let r = quotaPool.length - 1; r >= 0; r--) {
-                  if (quotaPool[r].subject.id === subj.id) quotaPool.splice(r, 1);
-                }
-              }
-            }
-
-            timetable.push({
-              id: `slot_${cls.id}_d${day}_p${periodIndex}`,
-              classId: cls.id, className: cls.name,
-              day, period: periodIndex++,
-              periodName: `Period ${periodIndex - 1}`,
-              periodTime: `${startStr} - ${endStr}`,
-              startTime: startStr, endTime: endStr,
-              durationMins: dur,
-              subjectId: subj.id, subjectName: subj.name,
-              subjectCode: subj.code, subjectColor: subj.color,
-              facultyId: fac.id, facultyName: fac.name,
-              venueId: chosenVenue.id, venueName: chosenVenue.name,
-              venueRoomNo: chosenVenue.roomNo, venueType: chosenVenue.type,
-              isConflict, conflictReason: isConflict ? 'Faculty double-booked' : null
-            });
-
-            currentMins += dur;
-          } else {
-            // Absolute safety: should never reach here, but advance to avoid infinite loop
-            currentMins = session.end;
-          }
+        } else {
+          // BREAK or LUNCH
+          timetable.push(toSlot(block, cls, day, null, { id: null, name: '', roomNo: '', type: block.venueType }));
         }
       });
     });
@@ -575,10 +756,13 @@ export function generateAutoTimetable({
   return {
     timetable,
     stats: {
-      totalSlots: timetable.length,
+      totalSlots:    timetable.length,
       allocatedSlots: timetable.length,
-      conflictCount,
-      utilizationRate: timetable.length > 0 ? Math.max(0, Math.round(((timetable.length - conflictCount) / timetable.length) * 100)) : 100
-    }
+      conflictCount: conflicts,
+      utilizationRate: timetable.length > 0
+        ? Math.max(0, Math.round(((timetable.length - conflicts) / timetable.length) * 100))
+        : 100
+    },
+    validationErrors: []
   };
 }

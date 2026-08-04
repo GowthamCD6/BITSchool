@@ -2023,40 +2023,47 @@ body {
   display: none;
 }
 
+@page {
+  size: landscape;
+  margin: 3mm;
+}
+
 @media print {
 
-  /* 1. Hide non-printable app UI elements */
+  /* 1. Hide UI, buttons, inputs, toast, and legend bar */
   .sidebar,
   .top-header,
   .section-header,
   .btn,
   .toast-container,
   .no-print,
+  .legend-bar,
+  .slot-actions,
+  .slot-room-no,
+  .slot-duration-badge,
+  .print-hide,
   button,
   select,
   input {
     display: none !important;
   }
 
-  /* 2. Reset full viewport containers for clean document printing */
+  /* 2. Lock viewport to exactly 1 single landscape page */
   html,
-  body {
-    background: #ffffff !important;
-    color: #000000 !important;
-    font-size: 8pt !important;
-    width: 100% !important;
-    height: 100vh !important;
-    overflow: hidden !important;
-  }
-
+  body,
+  #root,
+  .app-container,
   .main-content,
   .page-body {
     background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 7.2pt !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
     padding: 0 !important;
     margin: 0 !important;
-    width: 100% !important;
-    height: auto !important;
-    overflow: hidden !important;
     box-shadow: none !important;
   }
 
@@ -2064,14 +2071,14 @@ body {
   .print-only-header {
     display: block !important;
     text-align: center;
-    padding-bottom: 4px;
-    margin-bottom: 6px;
-    border-bottom: 1.5px solid #0f172a;
+    padding: 2px 0 !important;
+    margin-bottom: 4px !important;
+    border-bottom: 1.5px solid #0f172a !important;
   }
 
   .print-only-header h2 {
-    font-size: 1.25rem !important;
-    font-weight: 800 !important;
+    font-size: 1.15rem !important;
+    font-weight: 900 !important;
     color: #0f172a !important;
     margin: 0 0 2px 0 !important;
     text-transform: uppercase;
@@ -2080,48 +2087,36 @@ body {
 
   .print-only-header p {
     font-size: 0.78rem !important;
-    color: #475569 !important;
+    color: #1e40af !important;
     margin: 0 !important;
-    font-weight: 600 !important;
+    font-weight: 800 !important;
   }
 
-  /* 4. Timetable Scale & Auto-fit to 1 Single Page */
+  /* 4. Fit 6 days side-by-side on 1 page */
   .printable-timetable-area,
-  .timetable-container {
-    width: 100% !important;
-    max-width: 100% !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    background: #ffffff !important;
-    transform: scale(0.86);
-    transform-origin: top center;
-    margin-top: -10px !important;
-    page-break-after: avoid !important;
-    break-after: avoid !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
+  .timetable-container,
   div[style*="overflowX"],
   div[style*="overflow-x"] {
-    overflow: visible !important;
-    background: #ffffff !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
     padding: 0 !important;
-    border: none !important;
+    margin: 0 !important;
     box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
   }
 
-  div[style*="minWidth: 1450px"],
-  div[style*="min-width: 1450px"] {
-    min-width: 100% !important;
-    width: 100% !important;
+  /* Flex row container for all 6 days */
+  .timetable-grid {
     display: flex !important;
-    gap: 0.35rem !important;
+    gap: 0.2rem !important;
+    zoom: 0.8 !important; /* Scale down to fit the last hour vertically */
   }
 
   /* Compact day column card formatting */
+  div[style*="minWidth: 210px"],
+  div[style*="min-width: 210px"],
   div[style*="minWidth: 235px"],
   div[style*="min-width: 235px"] {
     min-width: 0 !important;
