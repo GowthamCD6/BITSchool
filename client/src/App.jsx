@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import PrimaryDataEntry from './pages/PrimaryData/PrimaryDataEntry';
 import FacultyManagement from './pages/Faculty/FacultyManagement';
 import VenueManagement from './pages/Venue/VenueManagement';
+import UserManagement from './pages/Users/UserManagement';
 import TimetableScheduler from './pages/TimeTable/TimetableScheduler';
 import BellScheduleConfigPage from './pages/BellSchedule/BellScheduleConfigPage';
 import ReportsPage from './pages/Reports/ReportsPage';
@@ -32,6 +33,8 @@ function AppContent() {
       case 'primary-data':
       case 'classes':
         return <PrimaryDataEntry />;
+      case 'users':
+        return <UserManagement />;
       case 'faculties':
         return <FacultyManagement />;
       case 'venues':

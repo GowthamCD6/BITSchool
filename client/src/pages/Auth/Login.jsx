@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useSchool } from '../../context/SchoolContext';
 import { API_BASE_URL } from '../../utils/constants';
+import bitLogo from '../../assets/BIT-logo.png';
 import loginImg from '../../assets/login.webp';
-import heroImg from '../../assets/hero.png';
 import {
   GraduationCap,
   Mail,
@@ -33,7 +33,7 @@ export default function Login() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const authenticateGoogleEmail = async (userEmail, userName) => {
+  const authenticateGoogleEmail = async (userEmail, userName, userPicture) => {
     setIsGoogleLoading(true);
     setErrorMessage('');
 
@@ -47,7 +47,7 @@ export default function Login() {
       const response = await fetch(`${API_BASE_URL}/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: userEmail, name: userName })
+        body: JSON.stringify({ email: userEmail, name: userName, picture: userPicture })
       });
       const data = await response.json();
 
@@ -57,7 +57,10 @@ export default function Login() {
         if (data.token) {
           localStorage.setItem('bitschool_token', data.token);
         }
-        login(data.user);
+        login({
+          ...data.user,
+          picture: userPicture || data.user?.picture || data.user?.avatar
+        });
       } else {
         setErrorMessage(data.message || `Access Denied: ${userEmail} is not registered in the system.`);
       }
@@ -72,7 +75,7 @@ export default function Login() {
       try {
         const payload = JSON.parse(atob(googleResponse.credential.split('.')[1]));
         if (payload.email) {
-          await authenticateGoogleEmail(payload.email, payload.name);
+          await authenticateGoogleEmail(payload.email, payload.name, payload.picture);
           return;
         }
       } catch (e) {
@@ -222,8 +225,14 @@ export default function Login() {
         <div className="login-form-card">
 
           {/* Title Header */}
-          <div className="login-header">
+          <div className="login-header" style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+            <img
+              src={bitLogo}
+              alt="Bannari Amman Institute of Technology"
+              style={{ height: '60px', width: 'auto', objectFit: 'contain', marginBottom: '0.75rem', display: 'inline-block' }}
+            />
             <h2 className="login-title">Sign In to BITSchool</h2>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>Bannari Amman Institute of Technology</p>
           </div>
 
           {/* Google Sign-In Button */}

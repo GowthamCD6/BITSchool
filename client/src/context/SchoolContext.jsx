@@ -72,6 +72,19 @@ export function SchoolProvider({ children }) {
   const [ecaVerticals, setEcaVerticals] = useState(() => safeJSONParse('bitschool_eca_verticals', []));
   const [ecaSchedule, setEcaSchedule] = useState(() => safeJSONParse('bitschool_eca_schedule', {}));
 
+  // ── Users Account State ──
+  const [users, setUsers] = useState(() => safeJSONParse('bitschool_users', [
+    {
+      id: 'user-gowtham-001',
+      name: 'Gowtham',
+      regNo: '7376242IT163',
+      email: 'gowthamnaveen124@gmail.com',
+      role: 'Principal Administrator',
+      avatarColor: '#2563eb',
+      createdAt: new Date().toISOString()
+    }
+  ]));
+
   // ECA vertical details with grade mappings
   const [ecaVerticalDetails, setEcaVerticalDetails] = useState([]);
 
@@ -139,7 +152,8 @@ export function SchoolProvider({ children }) {
         ecaData,
         timeSlotsData,
         bellConfigData,
-        timetablesData
+        timetablesData,
+        usersData
       ] = await Promise.all([
         safeFetchJSON(`${API_BASE_URL}/classes`),
         safeFetchJSON(`${API_BASE_URL}/courses`),
@@ -149,7 +163,8 @@ export function SchoolProvider({ children }) {
         safeFetchJSON(`${API_BASE_URL}/eca`),
         safeFetchJSON(`${API_BASE_URL}/time-slots`),
         safeFetchJSON(`${API_BASE_URL}/time-slots/bell-config`),
-        safeFetchJSON(`${API_BASE_URL}/timetables`)
+        safeFetchJSON(`${API_BASE_URL}/timetables`),
+        safeFetchJSON(`${API_BASE_URL}/users`)
       ]);
 
       if (classesData) {
@@ -206,6 +221,10 @@ export function SchoolProvider({ children }) {
             utilizationRate: Math.max(0, Math.round(((savedSlots.length - savedSlots.filter(s => s.isConflict).length) / savedSlots.length) * 100))
           });
         }
+      }
+      if (usersData) {
+        const loaded = Array.isArray(usersData) ? usersData : (usersData.data || []);
+        if (loaded.length > 0) setUsers(loaded);
       }
     };
 
@@ -967,6 +986,67 @@ export function SchoolProvider({ children }) {
     showToast(msg, 'warning');
   };
 
+  // ── User Management CRUD (MySQL API) ──
+  const addUser = async (newUser) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setUsers(prev => [data.data, ...prev.filter(u => u.id !== data.data.id)]);
+        showToast(`User account created for "${data.data.name}".`);
+        return data.data;
+      } else {
+        throw new Error(data.message || 'Failed to create user account.');
+      }
+    } catch (err) {
+      const fallbackUser = {
+        ...newUser,
+        id: newUser.id || `usr_${Date.now()}`,
+        createdAt: new Date().toISOString()
+      };
+      setUsers(prev => [fallbackUser, ...prev]);
+      showToast(`User account created for "${fallbackUser.name}".`);
+      return fallbackUser;
+    }
+  };
+
+  const updateUser = async (updatedUser) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${updatedUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedUser)
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setUsers(prev => prev.map(u => u.id === updatedUser.id ? data.data : u));
+        showToast(`User details updated for "${data.data.name}".`);
+      } else {
+        setUsers(prev => prev.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
+        showToast(`User details updated for "${updatedUser.name}".`);
+      }
+    } catch (err) {
+      setUsers(prev => prev.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
+      showToast(`User details updated for "${updatedUser.name}".`);
+    }
+  };
+
+  const deleteUser = async (userId) => {
+    const target = users.find(u => u.id === userId);
+    setUsers(prev => prev.filter(u => u.id !== userId));
+    showToast(`User "${target?.name || 'Account'}" removed.`);
+
+    try {
+      await fetch(`${API_BASE_URL}/users/${userId}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('Network user delete notice:', err.message);
+    }
+  };
+
   const handleSetTab = (tabId) => {
     if (tabId === activeTab) return;
     setIsPageLoading(true);
@@ -979,11 +1059,15 @@ export function SchoolProvider({ children }) {
   return (
     <SchoolContext.Provider
       value={{
-        // Auth
+        // Auth & Users
         isAuthenticated,
         currentUser,
         login,
         logout,
+        users,
+        addUser,
+        updateUser,
+        deleteUser,
         activeTab,
         setActiveTab: handleSetTab,
         isPageLoading,
@@ -1058,6 +1142,10 @@ export function useSchool() {
       currentUser: null,
       login: () => {},
       logout: () => {},
+      users: [],
+      addUser: () => {},
+      updateUser: () => {},
+      deleteUser: () => {},
       activeTab: 'dashboard',
       setActiveTab: () => {},
       isPageLoading: false,

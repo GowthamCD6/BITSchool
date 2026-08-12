@@ -13,6 +13,7 @@ import gradeRoutes from './routes/gradeRoutes.js';
 import ecaRoutes from './routes/ecaRoutes.js';
 import timetableRoutes from './routes/timetableRoutes.js';
 import timeSlotRoutes from './routes/timeSlotRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 
 dotenv.config();
 
@@ -62,6 +63,7 @@ app.use('/api/grades', gradeRoutes);
 app.use('/api/eca', ecaRoutes);
 app.use('/api/timetables', timetableRoutes);
 app.use('/api/time-slots', timeSlotRoutes);
+app.use('/api/users', userRoutes);
 
 // 404 Handler
 app.use((req, res) => {
