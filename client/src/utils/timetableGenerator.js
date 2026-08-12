@@ -80,33 +80,54 @@ function r5(n) { return Math.round(n / 5) * 5; }
 
 /**
  * Parse duration string → minutes.
- * Handles: '06:00' (HH:MM), '45 mins', '1 hour', '1 hour 30 mins', etc.
+ * Handles: '05:30', '5:30', '5.5 hours', '45 mins', '1 hour 30 mins', '330', etc.
  */
-function parseDur(text) {
+export function parseWeeklyDurationToMins(text) {
   if (!text) return null;
   const raw = String(text).trim().toLowerCase();
   if (!raw || ['no', 'nan', 'none', ''].includes(raw)) return null;
 
-  // HH:MM format
+  // Format: HH:MM (e.g. '05:30', '5:30', '06:00')
   if (/^\d{1,2}:\d{2}$/.test(raw)) {
     const [h, m] = raw.split(':').map(Number);
     return (h || 0) * 60 + (m || 0);
   }
 
+  // Format: Decimal hours (e.g. '5.5', '5.5 hours', '5.5 hrs')
+  const decimalMatch = raw.match(/^(\d+(?:\.\d+)?)\s*(?:hours|hour|hrs|hr)?$/);
+  if (decimalMatch && (raw.includes('.') || raw.includes('hour') || raw.includes('hr'))) {
+    const hours = parseFloat(decimalMatch[1]);
+    if (!isNaN(hours) && hours > 0) {
+      return Math.round(hours * 60);
+    }
+  }
+
+  // Format: '5 hours 30 mins' or '5 hr 30 m'
   let hours = 0;
   let mins = 0;
   if (raw.includes('hour') || raw.includes('hr')) {
-    const hm = raw.match(/(\d+)\s*(?:hour|hr)/);
-    if (hm) hours = parseInt(hm[1], 10);
-    const rest = raw.split(/hour|hr/)[1] || '';
+    const hm = raw.match(/(\d+(?:\.\d+)?)\s*(?:hour|hrs|hr)/);
+    if (hm) hours = parseFloat(hm[1]);
+    const rest = raw.split(/hour|hrs|hr/)[1] || '';
     const mm = rest.match(/(\d+)/);
     if (mm) mins = parseInt(mm[1], 10);
+  } else if (raw.includes('min') || raw.includes('m')) {
+    const mm = raw.match(/(\d+)/);
+    if (mm) mins = parseInt(mm[1], 10);
   } else {
-    const d = raw.replace(/[^\d]/g, ' ').trim().split(/\s+/);
-    if (d[0]) mins = parseInt(d[0], 10);
+    // Pure number string e.g. '330' or '6'
+    const num = parseFloat(raw);
+    if (!isNaN(num) && num > 0) {
+      return num <= 12 ? Math.round(num * 60) : Math.round(num);
+    }
   }
-  const total = hours * 60 + mins;
+
+  const total = Math.round(hours * 60) + mins;
   return total > 0 ? total : null;
+}
+
+function parseDur(text) {
+  return parseWeeklyDurationToMins(text);
 }
 
 /** Seeded Fisher-Yates shuffle for deterministic day-to-day variety */
@@ -170,13 +191,13 @@ function getEcaMap(ecaSchedule, grade, day) {
 
 /**
  * Per-period duration = weeklyDuration / weeklyPeriods, rounded to 5 mins.
- * weeklyDuration is stored as 'HH:MM' (e.g. '06:00' = 360 mins).
+ * weeklyDuration is stored as 'HH:MM' (e.g. '06:00' = 360 mins, '05:30' = 330 mins).
  */
 export function getSubjectPeriodDurationMins(subj) {
   const periods = Math.max(1, Number(subj.weeklyPeriods) || 6);
   let totalMins = 360; // default 6 hours / week
   if (subj.weeklyDuration) {
-    const parsed = parseDur(subj.weeklyDuration);
+    const parsed = parseWeeklyDurationToMins(subj.weeklyDuration);
     if (parsed && parsed > 0) totalMins = parsed;
   }
   return Math.max(5, r5(totalMins / periods));
@@ -319,12 +340,85 @@ export function findBestFacultyForSubject(subj, grade, faculties = [], day = '',
 
 // ─── SESSION FILLER ───────────────────────────────────────────────────────────
 
-function fillSession(sessionStart, sessionEnd, subjectPool, usedIdsToday, grade = '', faculties = [], day = '', facultyBusyMap = {}, configuredSlots = []) {
+function selectBestCandidateForSlot(trackerMap, grade, faculties, day, startMins, endMins, facultyBusyMap, lastPlacedRef) {
+  const candidates = Array.from(trackerMap.values());
+  if (!candidates.length) return null;
+
+  const dayUpper = String(day).toUpperCase();
+  const lastPlacedId = lastPlacedRef ? lastPlacedRef.subjectId : null;
+
+  const evaluated = candidates.map(item => {
+    // Has subject reached its target weekly duration?
+    // Strict minute check: Quota is satisfied ONLY when allocatedMins >= targetMins - 2.
+    // (Does NOT truncate prematurely based on period count!)
+    const isQuotaSatisfied = item.allocatedMins >= Math.max(5, item.targetMins - 2);
+
+    // Is subject explicitly restricted to a specific day?
+    const targetDay = String(item.data.day || item.data.assignedDay || item.data.preferredDay || '').toUpperCase();
+    const isDayMismatch = Boolean(targetDay && targetDay !== 'ALL' && targetDay !== dayUpper);
+
+    // Has subject been placed today?
+    const usedTodayCount = item.dailyCount[dayUpper] || 0;
+    const usedToday = usedTodayCount > 0;
+
+    // Would placing this subject create a back-to-back duplicate in adjacent slots?
+    const isAdjacentDuplicate = lastPlacedId != null && String(item.id) === String(lastPlacedId);
+
+    // Is faculty available for this slot?
+    const fac = findBestFacultyForSubject(item.data, grade, faculties, day, startMins, endMins, facultyBusyMap);
+    const hasAvailableFaculty = Boolean(fac && fac.id);
+
+    // Calculate Tier (1 is highest priority, 8 is lowest)
+    let tier = 8;
+    if (!isQuotaSatisfied && !isDayMismatch && !usedToday && !isAdjacentDuplicate && hasAvailableFaculty) {
+      tier = 1;
+    } else if (!isQuotaSatisfied && !isDayMismatch && !usedToday && !isAdjacentDuplicate) {
+      tier = 2;
+    } else if (!isQuotaSatisfied && !isDayMismatch && !isAdjacentDuplicate && hasAvailableFaculty) {
+      tier = 3;
+    } else if (!isQuotaSatisfied && !isDayMismatch && !isAdjacentDuplicate) {
+      tier = 4;
+    } else if (isQuotaSatisfied && !isDayMismatch && !usedToday && !isAdjacentDuplicate && hasAvailableFaculty) {
+      tier = 5;
+    } else if (isQuotaSatisfied && !isDayMismatch && !isAdjacentDuplicate && hasAvailableFaculty) {
+      tier = 6;
+    } else if (!isAdjacentDuplicate) {
+      tier = 7;
+    } else {
+      tier = 8;
+    }
+
+    const remainingMins = item.targetMins - item.allocatedMins;
+    const remainingRatio = item.targetMins > 0 ? remainingMins / item.targetMins : 0;
+
+    return {
+      item,
+      tier,
+      usedTodayCount,
+      remainingRatio,
+      remainingMins,
+      allocatedMins: item.allocatedMins,
+      fac
+    };
+  });
+
+  evaluated.sort((a, b) => {
+    if (a.tier !== b.tier) return a.tier - b.tier;
+    if (Math.abs(b.remainingRatio - a.remainingRatio) > 0.01) return b.remainingRatio - a.remainingRatio;
+    if (a.usedTodayCount !== b.usedTodayCount) return a.usedTodayCount - b.usedTodayCount;
+    return a.allocatedMins - b.allocatedMins;
+  });
+
+  return evaluated[0] ? evaluated[0].item : null;
+}
+
+function fillSession(sessionStart, sessionEnd, trackerMap, grade = '', faculties = [], day = '', facultyBusyMap = {}, configuredSlots = [], lastPlacedRef = { subjectId: null }) {
   const blocks = [];
   const totalDuration = sessionEnd - sessionStart;
-  if (totalDuration <= 0 || !subjectPool || !subjectPool.length) return blocks;
+  if (totalDuration <= 0 || !trackerMap || trackerMap.size === 0) return blocks;
 
   let cursor = sessionStart;
+  const dayUpper = String(day).toUpperCase();
 
   // Filter configured timeSlots that fall strictly within [sessionStart, sessionEnd]
   const periodSlots = (configuredSlots || []).filter(s =>
@@ -335,81 +429,118 @@ function fillSession(sessionStart, sessionEnd, subjectPool, usedIdsToday, grade 
   ).sort((a, b) => a.startMins - b.startMins);
 
   if (periodSlots.length > 0) {
-    let attemptCount = 0;
     for (const slot of periodSlots) {
       if (slot.startMins < cursor) continue;
 
-      if (slot.startMins > cursor) {
+      // Fill any gap before this configured slot
+      while (slot.startMins > cursor) {
         const gapDur = slot.startMins - cursor;
-        if (gapDur >= 15) {
-          const gapSubj = subjectPool.find(s => !usedIdsToday.has(s.id)) || subjectPool[0];
-          if (gapSubj) {
-            blocks.push({
-              kind: 'ACADEMIC',
-              subjectId: gapSubj.id,
-              name: gapSubj.name,
-              subjectCode: gapSubj.code,
-              subjectColor: gapSubj.color,
-              duration: gapDur,
-              startMins: cursor,
-              endMins: slot.startMins,
-              start: fmt(cursor),
-              end: fmt(slot.startMins),
-              subject: gapSubj.data
-            });
-            usedIdsToday.add(gapSubj.id);
-          }
+        if (gapDur < 5) {
+          cursor = slot.startMins;
+          break;
         }
-        cursor = slot.startMins;
-      }
-
-      attemptCount++;
-      let candidates = subjectPool.filter(s => !usedIdsToday.has(s.id));
-      if (candidates.length === 0) candidates = subjectPool;
-
-      let chosenSubj = candidates.find(s => {
-        const fac = findBestFacultyForSubject(s.data, grade, faculties, day, slot.startMins, slot.endMins, facultyBusyMap);
-        return Boolean(fac && fac.id);
-      });
-      if (!chosenSubj) chosenSubj = candidates[(attemptCount - 1) % candidates.length];
-      if (!chosenSubj) continue;
-
-      const dur = slot.endMins - slot.startMins;
-      blocks.push({
-        kind: 'ACADEMIC',
-        subjectId: chosenSubj.id,
-        name: chosenSubj.name,
-        subjectCode: chosenSubj.code,
-        subjectColor: chosenSubj.color,
-        duration: dur,
-        startMins: slot.startMins,
-        endMins: slot.endMins,
-        start: fmt(slot.startMins),
-        end: fmt(slot.endMins),
-        subject: chosenSubj.data
-      });
-      usedIdsToday.add(chosenSubj.id);
-      cursor = slot.endMins;
-    }
-
-    if (sessionEnd > cursor && sessionEnd - cursor >= 10) {
-      const remDur = sessionEnd - cursor;
-      const remSubj = subjectPool.find(s => !usedIdsToday.has(s.id)) || subjectPool[0];
-      if (remSubj) {
+        const chosenGap = selectBestCandidateForSlot(trackerMap, grade, faculties, day, cursor, slot.startMins, facultyBusyMap, lastPlacedRef);
+        if (!chosenGap) {
+          cursor = slot.startMins;
+          break;
+        }
+        const gapNeeded = chosenGap.targetMins - chosenGap.allocatedMins;
+        let assignGapDur = gapDur;
+        if (gapNeeded > 0 && gapNeeded < gapDur) {
+          assignGapDur = gapNeeded;
+        }
+        const gapEnd = cursor + assignGapDur;
         blocks.push({
           kind: 'ACADEMIC',
-          subjectId: remSubj.id,
-          name: remSubj.name,
-          subjectCode: remSubj.code,
-          subjectColor: remSubj.color,
-          duration: remDur,
+          subjectId: chosenGap.id,
+          name: chosenGap.name,
+          subjectCode: chosenGap.code,
+          subjectColor: chosenGap.color,
+          duration: assignGapDur,
           startMins: cursor,
-          endMins: sessionEnd,
+          endMins: gapEnd,
           start: fmt(cursor),
-          end: fmt(sessionEnd),
-          subject: remSubj.data
+          end: fmt(gapEnd),
+          subject: chosenGap.data
         });
+        chosenGap.allocatedMins += assignGapDur;
+        chosenGap.allocatedPeriods += 1;
+        chosenGap.dailyCount[dayUpper] = (chosenGap.dailyCount[dayUpper] || 0) + 1;
+        if (lastPlacedRef) lastPlacedRef.subjectId = chosenGap.id;
+        cursor = gapEnd;
       }
+
+      // Fill configured slot [cursor, slot.endMins]
+      while (slot.endMins > cursor) {
+        const slotAvail = slot.endMins - cursor;
+        if (slotAvail < 5) {
+          cursor = slot.endMins;
+          break;
+        }
+        const chosenSubj = selectBestCandidateForSlot(trackerMap, grade, faculties, day, cursor, slot.endMins, facultyBusyMap, lastPlacedRef);
+        if (!chosenSubj) {
+          cursor = slot.endMins;
+          break;
+        }
+        const needed = chosenSubj.targetMins - chosenSubj.allocatedMins;
+        let dur = slotAvail;
+        if (needed > 0 && needed < slotAvail) {
+          dur = needed;
+        }
+
+        const bEnd = cursor + dur;
+        blocks.push({
+          kind: 'ACADEMIC',
+          subjectId: chosenSubj.id,
+          name: chosenSubj.name,
+          subjectCode: chosenSubj.code,
+          subjectColor: chosenSubj.color,
+          duration: dur,
+          startMins: cursor,
+          endMins: bEnd,
+          start: fmt(cursor),
+          end: fmt(bEnd),
+          subject: chosenSubj.data
+        });
+        chosenSubj.allocatedMins += dur;
+        chosenSubj.allocatedPeriods += 1;
+        chosenSubj.dailyCount[dayUpper] = (chosenSubj.dailyCount[dayUpper] || 0) + 1;
+        if (lastPlacedRef) lastPlacedRef.subjectId = chosenSubj.id;
+        cursor = bEnd;
+      }
+    }
+
+    // Trailing session gap after configured slots up to sessionEnd
+    while (sessionEnd > cursor && sessionEnd - cursor >= 5) {
+      const remDur = sessionEnd - cursor;
+      const chosenRem = selectBestCandidateForSlot(trackerMap, grade, faculties, day, cursor, sessionEnd, facultyBusyMap, lastPlacedRef);
+      if (!chosenRem) break;
+
+      const needed = chosenRem.targetMins - chosenRem.allocatedMins;
+      let durToAssign = remDur;
+      if (needed > 0 && needed < remDur) {
+        durToAssign = needed;
+      }
+
+      const rEnd = cursor + durToAssign;
+      blocks.push({
+        kind: 'ACADEMIC',
+        subjectId: chosenRem.id,
+        name: chosenRem.name,
+        subjectCode: chosenRem.code,
+        subjectColor: chosenRem.color,
+        duration: durToAssign,
+        startMins: cursor,
+        endMins: rEnd,
+        start: fmt(cursor),
+        end: fmt(rEnd),
+        subject: chosenRem.data
+      });
+      chosenRem.allocatedMins += durToAssign;
+      chosenRem.allocatedPeriods += 1;
+      chosenRem.dailyCount[dayUpper] = (chosenRem.dailyCount[dayUpper] || 0) + 1;
+      if (lastPlacedRef) lastPlacedRef.subjectId = chosenRem.id;
+      cursor = rEnd;
     }
     return blocks;
   }
@@ -417,27 +548,19 @@ function fillSession(sessionStart, sessionEnd, subjectPool, usedIdsToday, grade 
   // Fallback: standard dynamic fill if no configured timeSlots exist in this interval
   let remaining = totalDuration;
   let attemptCount = 0;
-  const maxAttempts = 20;
+  const maxAttempts = 30;
 
   while (remaining > 0 && attemptCount < maxAttempts) {
     attemptCount++;
-    let candidates = subjectPool.filter(s => !usedIdsToday.has(s.id));
-    if (candidates.length === 0) candidates = subjectPool;
-
-    let chosenSubj = candidates.find(s => {
-      const fac = findBestFacultyForSubject(s.data, grade, faculties, day, cursor, cursor + s.duration, facultyBusyMap);
-      return Boolean(fac && fac.id);
-    });
-
-    if (!chosenSubj) chosenSubj = candidates[(attemptCount - 1) % candidates.length];
+    const chosenSubj = selectBestCandidateForSlot(trackerMap, grade, faculties, day, cursor, cursor + 45, facultyBusyMap, lastPlacedRef);
     if (!chosenSubj) break;
 
-    // Use subject's natural duration, or remaining time if remaining is smaller
-    let blockDur = Math.min(chosenSubj.duration, remaining);
+    const needed = chosenSubj.targetMins - chosenSubj.allocatedMins;
+    let blockDur = Math.min(chosenSubj.duration || 45, remaining);
 
-    // If remaining time after this block would be less than 10 mins, absorb it into this block to avoid tiny residual gaps
-    if (remaining - blockDur < 10 && remaining - blockDur > 0) {
-      blockDur = remaining;
+    // Strict clamping: never let blockDur exceed remaining needed target minutes
+    if (needed > 0 && needed < blockDur) {
+      blockDur = needed;
     }
 
     if (blockDur <= 0) break;
@@ -456,17 +579,12 @@ function fillSession(sessionStart, sessionEnd, subjectPool, usedIdsToday, grade 
       subject: chosenSubj.data
     });
 
-    usedIdsToday.add(chosenSubj.id);
+    chosenSubj.allocatedMins += blockDur;
+    chosenSubj.allocatedPeriods += 1;
+    chosenSubj.dailyCount[dayUpper] = (chosenSubj.dailyCount[dayUpper] || 0) + 1;
+    if (lastPlacedRef) lastPlacedRef.subjectId = chosenSubj.id;
     cursor += blockDur;
     remaining -= blockDur;
-  }
-
-  // Safety: if any tiny gap remains, stretch the last placed block to reach sessionEnd exactly
-  if (remaining > 0 && blocks.length > 0) {
-    const last = blocks[blocks.length - 1];
-    last.duration += remaining;
-    last.endMins = sessionEnd;
-    last.end = fmt(sessionEnd);
   }
 
   return blocks;
@@ -568,20 +686,30 @@ export function generateAutoTimetable(params) {
     });
     const activeSubjects = gradeSubjects.length > 0 ? gradeSubjects : subjects;
 
-    // Build ordered subject pool: highest weeklyPeriods = highest priority
-    const basePool = [...activeSubjects]
-      .sort((a, b) => (Number(b.weeklyPeriods) || 6) - (Number(a.weeklyPeriods) || 6))
-      .map(s => ({
-        id:       s.id,
-        name:     s.name,
-        code:     s.code || '',
-        color:    s.color || '#2563eb',
-        duration: getSubjectPeriodDurationMins(s),
-        data:     s
-      }));
+    // Build weekly trackerMap per class across ALL days (Mon - Sat)
+    const trackerMap = new Map();
+    activeSubjects.forEach(s => {
+      let targetMins = parseWeeklyDurationToMins(s.weeklyDuration);
+      if (!targetMins || targetMins <= 0) {
+        const pCount = Math.max(1, Number(s.weeklyPeriods) || 6);
+        targetMins = pCount * 45;
+      }
+      const targetPeriods = Math.max(1, Number(s.weeklyPeriods) || Math.round(targetMins / 45) || 6);
 
-    // Per-class seed for deterministic shuffle
-    const classSeed = (cls.id || '').split('').reduce((a, c) => a + c.charCodeAt(0), 42);
+      trackerMap.set(String(s.id), {
+        id: s.id,
+        name: s.name,
+        code: s.code || '',
+        color: s.color || '#2563eb',
+        duration: getSubjectPeriodDurationMins(s),
+        data: s,
+        targetMins,
+        targetPeriods,
+        allocatedMins: 0,
+        allocatedPeriods: 0,
+        dailyCount: {}
+      });
+    });
 
     // Helper: convert a placed block → timetable slot object
     let periodCounter = 0;
@@ -619,6 +747,7 @@ export function generateAutoTimetable(params) {
     // ── Process each day ──
     DAYS.forEach((day, dayIndex) => {
       periodCounter = 0; // reset per day
+      const lastPlacedRef = { subjectId: null };
       const ecaMap = getEcaMap(ecaSchedule, grade, day);
 
       // ── Determine Physical Fitness duration ──
@@ -631,13 +760,6 @@ export function generateAutoTimetable(params) {
         if (parsed && parsed > 0) pfDur = parsed;
       }
       pfDur = Math.max(5, Math.min(pfDur, (mBsM > sStartM ? mBsM - sStartM - 5 : 30)));
-
-      // ── Build today's subject pool (shuffled for variety) ──
-      const daySeed = classSeed * 31 + dayIndex * 17 + day.charCodeAt(0);
-      const dayPool = seededShuffle(basePool, daySeed);
-
-      // Track which subjects have been placed today (no duplicates)
-      const usedToday = new Set();
 
       // ── 1. COLLECT ALL FIXED ANCHOR BLOCKS FIRST (Physical Fitness + Breaks + DB ECA Activities) ──
       const rawAnchors = [];
@@ -865,7 +987,7 @@ export function generateAutoTimetable(params) {
 
       resolvedAnchors.forEach(anchor => {
         if (anchor.startMins > timelineCursor) {
-          const academicBlocks = fillSession(timelineCursor, anchor.startMins, dayPool, usedToday, grade, faculties, day, facultyBusyMap, configuredTimeSlots);
+          const academicBlocks = fillSession(timelineCursor, anchor.startMins, trackerMap, grade, faculties, day, facultyBusyMap, configuredTimeSlots, lastPlacedRef);
           dayBlocks.push(...academicBlocks);
         }
         dayBlocks.push(anchor);
@@ -873,7 +995,7 @@ export function generateAutoTimetable(params) {
       });
 
       if (sEndM > timelineCursor) {
-        const finalAcademics = fillSession(timelineCursor, sEndM, dayPool, usedToday, grade, faculties, day, facultyBusyMap, configuredTimeSlots);
+        const finalAcademics = fillSession(timelineCursor, sEndM, trackerMap, grade, faculties, day, facultyBusyMap, configuredTimeSlots, lastPlacedRef);
         dayBlocks.push(...finalAcademics);
       }
 

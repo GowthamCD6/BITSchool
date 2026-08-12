@@ -91,29 +91,42 @@ export default function Login() {
 
   useEffect(() => {
     /* global google */
-    if (window.google && window.google.accounts && !gsiInitializedRef.current) {
-      try {
-        window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleGoogleCallbackResponse,
-          auto_select: false,
-          use_fedcm_for_prompt: false
-        });
-        gsiInitializedRef.current = true;
-
-        const hiddenBtn = document.getElementById('hiddenGoogleBtn');
-        if (hiddenBtn) {
-          hiddenBtn.innerHTML = '';
-          window.google.accounts.id.renderButton(hiddenBtn, {
-            theme: 'outline',
-            size: 'large',
-            width: 380
+    const initGsi = () => {
+      if (window.google && window.google.accounts && window.google.accounts.id && !gsiInitializedRef.current) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: handleGoogleCallbackResponse,
+            auto_select: false,
+            use_fedcm_for_prompt: false
           });
+          gsiInitializedRef.current = true;
+
+          const hiddenBtn = document.getElementById('hiddenGoogleBtn');
+          if (hiddenBtn) {
+            hiddenBtn.innerHTML = '';
+            window.google.accounts.id.renderButton(hiddenBtn, {
+              theme: 'outline',
+              size: 'large',
+              width: 380
+            });
+          }
+        } catch (err) {
+          console.warn('Google Identity Initialization Notice:', err);
         }
-      } catch (err) {
-        console.warn('Google Identity Initialization Notice:', err);
       }
-    }
+    };
+
+    initGsi();
+    const interval = setInterval(() => {
+      if (gsiInitializedRef.current) {
+        clearInterval(interval);
+      } else {
+        initGsi();
+      }
+    }, 300);
+
+    return () => clearInterval(interval);
   }, [GOOGLE_CLIENT_ID]);
 
   const handleSubmit = async (e) => {
