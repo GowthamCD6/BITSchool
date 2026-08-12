@@ -121,24 +121,42 @@ function SlotRow({ slot, onEdit, onDelete, viewMode }) {
   const isEca     = isEcaSlot(slot);
   const isFitness = isFitnessSlot(slot);
 
-  // Color schemes per slot type
+  // Color schemes per slot type:
+  // ONLY Break Time, Lunch Time, and ECA / Physical Fitness have color styling.
+  // All regular Academic Periods are clean neutral white with subtle border.
   let rowBg, timeBg, leftBorderColor, nameColor, timeColor;
 
   if (isLunch) {
-    rowBg = 'linear-gradient(90deg,#fff1f2 0%,#ffe4e6 100%)';
-    timeBg = '#fff1f2'; leftBorderColor = '#ef4444'; nameColor = '#9b1827'; timeColor = '#991b1b';
+    rowBg = '#fff1f2';
+    timeBg = '#ffe4e6';
+    leftBorderColor = '#ef4444';
+    nameColor = '#991b1b';
+    timeColor = '#991b1b';
   } else if (isBreak) {
-    rowBg = 'linear-gradient(90deg,#fffbeb 0%,#fef3c7 100%)';
-    timeBg = '#fffbeb'; leftBorderColor = '#f59e0b'; nameColor = '#92400e'; timeColor = '#92400e';
+    rowBg = '#fffbeb';
+    timeBg = '#fef3c7';
+    leftBorderColor = '#f59e0b';
+    nameColor = '#92400e';
+    timeColor = '#92400e';
   } else if (isFitness) {
-    rowBg = 'linear-gradient(90deg,#f0fdf4 0%,#d1fae5 100%)';
-    timeBg = '#f0fdf4'; leftBorderColor = '#059669'; nameColor = '#065f46'; timeColor = '#065f46';
+    rowBg = '#f0fdf4';
+    timeBg = '#d1fae5';
+    leftBorderColor = '#059669';
+    nameColor = '#065f46';
+    timeColor = '#065f46';
   } else if (isEca) {
-    rowBg = 'linear-gradient(90deg,#fffbeb 0%,#fef3c7 100%)';
-    timeBg = '#fffbeb'; leftBorderColor = slot.subjectColor || '#d97706'; nameColor = '#92400e'; timeColor = '#78350f';
+    rowBg = '#fffbeb';
+    timeBg = '#fef3c7';
+    leftBorderColor = '#d97706';
+    nameColor = '#92400e';
+    timeColor = '#78350f';
   } else {
-    rowBg = '#fff';
-    timeBg = '#fafafa'; leftBorderColor = slot.subjectColor || '#2563eb'; nameColor = '#0f172a'; timeColor = '#475569';
+    // Pure clean neutral styling for Academic Periods (No colors)
+    rowBg = '#ffffff';
+    timeBg = '#f8fafc';
+    leftBorderColor = '#cbd5e1';
+    nameColor = '#0f172a';
+    timeColor = '#475569';
   }
 
   const Icon = isLunch ? Utensils : isBreak ? Coffee : isFitness ? Activity : isEca ? Sparkles : BookOpen;
@@ -253,10 +271,9 @@ function DayColumn({ day, gradeStr, ecaLabel, slots, viewMode }) {
       {/* Day Header */}
       <div
         style={{
-          background: 'linear-gradient(135deg,#1e40af 0%,#1d4ed8 100%)',
+          background: '#2563eb',
           padding: '10px 8px 8px',
-          textAlign: 'center',
-          borderBottom: '3px solid #3b82f6'
+          textAlign: 'center'
         }}
       >
         {/* Grade badge */}
@@ -646,47 +663,7 @@ export default function TimetableScheduler() {
         </p>
       </div>
 
-      {/* ── LEGEND BAR ── */}
-      {hasTimetable && (
-        <div
-          className="legend-bar no-print"
-          style={{
-            display: 'flex',
-            gap: '1rem',
-            flexWrap: 'wrap',
-            padding: '8px 12px',
-            background: '#f8fafc',
-            borderRadius: '10px',
-            border: '1px solid #e2e8f0',
-            fontSize: '0.70rem',
-            fontWeight: 700,
-            color: '#475569',
-            alignItems: 'center'
-          }}
-        >
-          <span>Legend:</span>
-          {[
-            { color: '#059669', label: 'Physical Fitness' },
-            { color: '#f59e0b', label: 'Break' },
-            { color: '#ef4444', label: 'Lunch' },
-            { color: '#d97706', label: 'ECA Activity' },
-            { color: '#2563eb', label: 'Academic' }
-          ].map(({ color, label }) => (
-            <span key={label} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: color, display: 'inline-block' }} />
-              {label}
-            </span>
-          ))}
 
-          {/* Bell times quick reference */}
-          <span style={{ marginLeft: 'auto', fontWeight: 600, color: '#94a3b8', fontSize: '0.65rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-            <span><Clock size={11} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{bellConfig.schoolStartTime} → {bellConfig.schoolEndTime}</span>
-            <span><Coffee size={11} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{bellConfig.morningBreakStart} – {bellConfig.morningBreakEnd}</span>
-            <span><Utensils size={11} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{bellConfig.lunchBreakStart} – {bellConfig.lunchBreakEnd}</span>
-            <span><Coffee size={11} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{bellConfig.afternoonBreakStart} – {bellConfig.afternoonBreakEnd}</span>
-          </span>
-        </div>
-      )}
 
       {/* ── EMPTY STATE ── */}
       {!hasTimetable ? (
@@ -780,8 +757,11 @@ export default function TimetableScheduler() {
       ) : (
         /* ── TIMETABLE GRID ── */
         <div
+          className="no-scrollbar"
           style={{
             overflowX: 'auto',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
             paddingBottom: '1rem'
           }}
         >

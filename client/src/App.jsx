@@ -57,7 +57,7 @@ function AppContent() {
 
       <main className="main-content">
         <Header />
-        <div className="page-body">
+        <div key={activeTab} className="page-body fade-in">
           {renderActivePage()}
         </div>
       </main>

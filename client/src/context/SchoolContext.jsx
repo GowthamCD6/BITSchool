@@ -1049,11 +1049,7 @@ export function SchoolProvider({ children }) {
 
   const handleSetTab = (tabId) => {
     if (tabId === activeTab) return;
-    setIsPageLoading(true);
     setActiveTab(tabId);
-    setTimeout(() => {
-      setIsPageLoading(false);
-    }, 400); // 400ms simulate page loading
   };
 
   return (
