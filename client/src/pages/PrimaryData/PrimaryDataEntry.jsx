@@ -134,6 +134,8 @@ export default function PrimaryDataEntry() {
     active: false,
     label: 'No',
     duration: '30 mins',
+    startTime: '',
+    endTime: '',
     target: 'All',
     color: '#059669'
   });
@@ -144,27 +146,27 @@ export default function PrimaryDataEntry() {
 
   // ── Bell Schedule Timing Parameters Form State ──
   const [bellForm, setBellForm] = useState({
-    schoolStartTime: '08:30 AM',
-    morningBreakStart: '10:00 AM',
-    morningBreakEnd: '10:15 AM',
-    lunchBreakStart: '11:45 AM',
-    lunchBreakEnd: '12:30 PM',
-    afternoonBreakStart: '02:00 PM',
-    afternoonBreakEnd: '02:15 PM',
-    schoolEndTime: '03:45 PM'
+    schoolStartTime: bellConfig?.schoolStartTime || '',
+    morningBreakStart: bellConfig?.morningBreakStart || '',
+    morningBreakEnd: bellConfig?.morningBreakEnd || '',
+    lunchBreakStart: bellConfig?.lunchBreakStart || '',
+    lunchBreakEnd: bellConfig?.lunchBreakEnd || '',
+    afternoonBreakStart: bellConfig?.afternoonBreakStart || '',
+    afternoonBreakEnd: bellConfig?.afternoonBreakEnd || '',
+    schoolEndTime: bellConfig?.schoolEndTime || ''
   });
 
   React.useEffect(() => {
     if (bellConfig) {
       setBellForm({
-        schoolStartTime: bellConfig.schoolStartTime || '08:30 AM',
-        morningBreakStart: bellConfig.morningBreakStart || '10:00 AM',
-        morningBreakEnd: bellConfig.morningBreakEnd || '10:15 AM',
-        lunchBreakStart: bellConfig.lunchBreakStart || '11:45 AM',
-        lunchBreakEnd: bellConfig.lunchBreakEnd || '12:30 PM',
-        afternoonBreakStart: bellConfig.afternoonBreakStart || '02:00 PM',
-        afternoonBreakEnd: bellConfig.afternoonBreakEnd || '02:15 PM',
-        schoolEndTime: bellConfig.schoolEndTime || '03:45 PM'
+        schoolStartTime: bellConfig.schoolStartTime || '',
+        morningBreakStart: bellConfig.morningBreakStart || '',
+        morningBreakEnd: bellConfig.morningBreakEnd || '',
+        lunchBreakStart: bellConfig.lunchBreakStart || '',
+        lunchBreakEnd: bellConfig.lunchBreakEnd || '',
+        afternoonBreakStart: bellConfig.afternoonBreakStart || '',
+        afternoonBreakEnd: bellConfig.afternoonBreakEnd || '',
+        schoolEndTime: bellConfig.schoolEndTime || ''
       });
     }
   }, [bellConfig]);
@@ -178,8 +180,8 @@ export default function PrimaryDataEntry() {
   const [slotForm, setSlotForm] = useState({
     slotNo: 1,
     name: 'Period 1',
-    startTime: '08:30',
-    endTime: '09:15',
+    startTime: '',
+    endTime: '',
     type: 'period',
     color: '#2563eb'
   });
@@ -190,8 +192,8 @@ export default function PrimaryDataEntry() {
       setSlotForm({
         slotNo: slot.slotNo || ((timeSlots || []).length + 1),
         name: slot.name || '',
-        startTime: slot.startTime || '08:30',
-        endTime: slot.endTime || '09:15',
+        startTime: slot.startTime || '',
+        endTime: slot.endTime || '',
         type: slot.type || 'period',
         color: slot.color || (slot.type === 'break' ? '#f59e0b' : slot.type === 'lunch' ? '#ef4444' : '#2563eb')
       });
@@ -201,8 +203,8 @@ export default function PrimaryDataEntry() {
       setSlotForm({
         slotNo: nextNo,
         name: `Period ${nextNo}`,
-        startTime: '08:30',
-        endTime: '09:15',
+        startTime: '',
+        endTime: '',
         type: 'period',
         color: '#2563eb'
       });
@@ -459,16 +461,33 @@ export default function PrimaryDataEntry() {
     setIsCourseModalOpen(false);
   };
 
+  // Helper: parse start/end time from activity label e.g. "Yes (9:45AM - 10:45PM)"
+  const parseTimeRangeFromText = (text) => {
+    if (!text) return { startTime: '', endTime: '', periodTime: '' };
+    const str = String(text);
+    const match = str.match(/(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)\s*[-–—]\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/i);
+    if (match) {
+      const startTime = match[1].trim();
+      const endTime = match[2].trim();
+      return { startTime, endTime, periodTime: `${startTime} - ${endTime}` };
+    }
+    return { startTime: '', endTime: '', periodTime: '' };
+  };
+
   // ── ECA Cell Edit Handlers ──
   const openEcaModal = (day, vertical, grade) => {
     const targetG = grade || selectedEcaGrade || uniqueGrades[0] || '4';
     const key = `${targetG}_${day}`;
     const currentSlot = ecaSchedule[key]?.[vertical] || { active: false, label: 'No' };
+    const parsed = parseTimeRangeFromText(currentSlot.label || '');
+
     setEditingEcaTarget({ day, vertical, grade: targetG });
     setEcaForm({
       active: currentSlot.active || false,
       label: currentSlot.label || (currentSlot.active ? 'Yes' : 'No'),
       duration: currentSlot.duration || '30 mins',
+      startTime: currentSlot.startTime || parsed.startTime || '',
+      endTime: currentSlot.endTime || parsed.endTime || '',
       target: currentSlot.target || 'All',
       color: currentSlot.color || '#059669'
     });
@@ -481,20 +500,26 @@ export default function PrimaryDataEntry() {
     if (!day || !vertical) return;
 
     let finalLabel = 'No';
+    const periodStr = (ecaForm.startTime && ecaForm.endTime) ? `${ecaForm.startTime} - ${ecaForm.endTime}` : '';
+    const timeDisplay = periodStr || ecaForm.duration || '30 mins';
+
     if (ecaForm.active) {
       if (ecaForm.target === 'Girls') {
-        finalLabel = `Yes - Girls (${ecaForm.duration})`;
+        finalLabel = `Yes - Girls (${timeDisplay})`;
       } else if (ecaForm.target === 'Boys') {
-        finalLabel = `Yes - Boys (${ecaForm.duration})`;
+        finalLabel = `Yes - Boys (${timeDisplay})`;
       } else {
-        finalLabel = `Yes (${ecaForm.duration})`;
+        finalLabel = `Yes (${timeDisplay})`;
       }
     }
 
     const newCellData = {
       active: ecaForm.active,
       label: finalLabel,
-      duration: ecaForm.duration,
+      startTime: ecaForm.startTime || '',
+      endTime: ecaForm.endTime || '',
+      periodTime: periodStr,
+      duration: ecaForm.duration || '30 mins',
       target: ecaForm.target,
       color: ecaForm.color
     };
@@ -1310,10 +1335,20 @@ export default function PrimaryDataEntry() {
                                       style={{
                                         background: slot.color ? `${slot.color}15` : '#ecfdf5',
                                         color: slot.color || '#059669',
-                                        border: `1px solid ${slot.color ? `${slot.color}40` : '#a7f3d0'}`
+                                        border: `1px solid ${slot.color ? `${slot.color}40` : '#a7f3d0'}`,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        gap: '2px',
+                                        padding: '5px 8px'
                                       }}
                                     >
-                                      {slot.label}
+                                      <span style={{ fontWeight: 800 }}>{slot.label}</span>
+                                      {(slot.startTime || slot.endTime || slot.periodTime) && (
+                                        <span style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.9, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                          <Clock size={11} /> {slot.periodTime || `${slot.startTime} - ${slot.endTime}`}
+                                        </span>
+                                      )}
                                     </div>
                                   ) : (
                                     <span className="eca-badge-no">No</span>
@@ -1446,7 +1481,7 @@ export default function PrimaryDataEntry() {
                 if (available.length === 0) {
                   return (
                     <option value="" disabled>
-                      ⚠️ All classrooms already allocated to other sections
+                      All classrooms already allocated to other sections
                     </option>
                   );
                 }
@@ -1609,6 +1644,34 @@ export default function PrimaryDataEntry() {
 
           {ecaForm.active && (
             <>
+              <div className="form-group" style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <label style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1e40af', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Clock size={14} /> Fixed Period Schedule Timing
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Period Start Time</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Start Time (e.g. HH:MM AM/PM)"
+                      value={ecaForm.startTime || ''}
+                      onChange={(e) => setEcaForm({ ...ecaForm, startTime: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Period End Time</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="End Time (e.g. HH:MM AM/PM)"
+                      value={ecaForm.endTime || ''}
+                      onChange={(e) => setEcaForm({ ...ecaForm, endTime: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="form-group">
                 <label>Session Duration</label>
                 <select
@@ -1781,7 +1844,7 @@ export default function PrimaryDataEntry() {
               <input
                 type="text"
                 className="form-control"
-                placeholder="e.g. 08:30"
+                placeholder="Start Time (HH:MM)"
                 value={slotForm.startTime}
                 onChange={(e) => setSlotForm({ ...slotForm, startTime: e.target.value })}
                 required
@@ -1793,7 +1856,7 @@ export default function PrimaryDataEntry() {
               <input
                 type="text"
                 className="form-control"
-                placeholder="e.g. 09:15"
+                placeholder="End Time (HH:MM)"
                 value={slotForm.endTime}
                 onChange={(e) => setSlotForm({ ...slotForm, endTime: e.target.value })}
                 required

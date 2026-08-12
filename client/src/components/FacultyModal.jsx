@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Check } from 'lucide-react';
 import Modal from './Modal';
 import { useSchool } from '../context/SchoolContext';
 
@@ -235,7 +236,7 @@ export default function FacultyModal({ isOpen, onClose, facultyToEdit }) {
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  {checked ? '✓ ' : ''}{grd}
+                  {checked && <Check size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />}{grd}
                 </button>
               );
             })}

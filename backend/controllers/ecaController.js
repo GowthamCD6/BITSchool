@@ -1,5 +1,22 @@
 import { EcaVertical, EcaSchedule, GradeEcaVertical, Grade } from '../models/index.js';
 
+// Helper: parse start/end time from activity label e.g. "Yes (9:45AM - 10:45PM)"
+function parseTimeRangeFromText(text) {
+  if (!text) return { startTime: '', endTime: '', periodTime: '' };
+  const str = String(text);
+  const match = str.match(/(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)\s*[-–—]\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/i);
+  if (match) {
+    const startTime = match[1].trim();
+    const endTime = match[2].trim();
+    return {
+      startTime,
+      endTime,
+      periodTime: `${startTime} - ${endTime}`
+    };
+  }
+  return { startTime: '', endTime: '', periodTime: '' };
+}
+
 // GET /api/eca — Return all ECA verticals (with grade mappings) and schedule data from MySQL
 export const getEcaData = async (req, res) => {
   try {
@@ -21,16 +38,37 @@ export const getEcaData = async (req, res) => {
     // 2. Fetch all ECA Schedule entries
     const scheduleRecords = await EcaSchedule.findAll();
 
-    // 3. Reconstruct the nested schedule object: { "4_MONDAY": { "Keyboard": { active, label, ... } }, ... }
+    // 3. Reconstruct nested schedule object and auto-backfill DB timing columns if empty
     const schedule = {};
     for (const rec of scheduleRecords) {
       const gradeKey = rec.grade ? `${rec.grade}_${rec.day}` : rec.day;
+
+      let st = rec.startTime || '';
+      let et = rec.endTime || '';
+      let pt = rec.periodTime || '';
+
+      // Auto-extract from activity text if DB columns are empty
+      if ((!st || !et) && rec.activity) {
+        const parsed = parseTimeRangeFromText(rec.activity);
+        if (parsed.startTime && parsed.endTime) {
+          st = parsed.startTime;
+          et = parsed.endTime;
+          pt = parsed.periodTime;
+          rec.startTime = st;
+          rec.endTime = et;
+          rec.periodTime = pt;
+          await rec.save().catch(e => console.warn('[ECA DB Auto-Backfill Notice]:', e.message));
+        }
+      }
 
       if (!schedule[gradeKey]) schedule[gradeKey] = {};
       schedule[gradeKey][rec.verticalId] = {
         active: rec.activity ? true : false,
         label: rec.activity || 'No',
         duration: rec.duration || '',
+        startTime: st,
+        endTime: et,
+        periodTime: pt || (st && et ? `${st} - ${et}` : ''),
         target: rec.target || 'All',
         color: rec.color || '#059669'
       };
@@ -58,9 +96,24 @@ export const getEcaData = async (req, res) => {
 export const updateEcaCell = async (req, res) => {
   try {
     const { day, vertical, grade, active, label, duration, target, color } = req.body;
+    let { startTime, endTime, periodTime } = req.body;
 
     if (!day || !vertical) {
       return res.status(400).json({ success: false, message: 'day and vertical are required.' });
+    }
+
+    // Auto-parse start & end time from activity label if not explicitly provided
+    if ((!startTime || !endTime) && label) {
+      const parsed = parseTimeRangeFromText(label);
+      if (parsed.startTime && parsed.endTime) {
+        if (!startTime) startTime = parsed.startTime;
+        if (!endTime) endTime = parsed.endTime;
+        if (!periodTime) periodTime = parsed.periodTime;
+      }
+    }
+
+    if (!periodTime && startTime && endTime) {
+      periodTime = `${startTime} - ${endTime}`;
     }
 
     const gradeVal = grade || '4';
@@ -72,6 +125,9 @@ export const updateEcaCell = async (req, res) => {
         grade: gradeVal,
         activity: active ? (label || 'Yes') : null,
         duration: duration || '',
+        startTime: startTime || '',
+        endTime: endTime || '',
+        periodTime: periodTime || '',
         target: target || 'All',
         color: color || '#059669'
       }
@@ -80,6 +136,9 @@ export const updateEcaCell = async (req, res) => {
     if (!created) {
       record.activity = active ? (label || 'Yes') : null;
       record.duration = duration || '';
+      record.startTime = startTime || '';
+      record.endTime = endTime || '';
+      record.periodTime = periodTime || '';
       record.target = target || 'All';
       record.color = color || '#059669';
       await record.save();

@@ -53,6 +53,18 @@ function parseTime(t) {
   return h * 60 + m;
 }
 
+function parseTimeRangeFromText(text) {
+  if (!text) return { startTime: '', endTime: '', periodTime: '' };
+  const str = String(text);
+  const match = str.match(/(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)\s*[-–—]\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/i);
+  if (match) {
+    const startTime = match[1].trim();
+    const endTime = match[2].trim();
+    return { startTime, endTime, periodTime: `${startTime} - ${endTime}` };
+  }
+  return { startTime: '', endTime: '', periodTime: '' };
+}
+
 /** Convert total minutes → '08:30 AM' format */
 function fmt(total) {
   const t = ((total % 1440) + 1440) % 1440;
@@ -307,53 +319,117 @@ export function findBestFacultyForSubject(subj, grade, faculties = [], day = '',
 
 // ─── SESSION FILLER ───────────────────────────────────────────────────────────
 
-/**
- * Fill a time session [sessionStart, sessionEnd] with academic subjects.
- *
- * Rules:
- *  • Pick subjects NOT already used today (usedIdsToday Set)
- *  • Prioritize subjects whose assigned faculty is AVAILABLE at that time interval
- *  • Use exact per-period duration from master course
- *
- * @param {number}  sessionStart     minutes from midnight
- * @param {number}  sessionEnd       minutes from midnight (must reach exactly)
- * @param {Array}   subjectPool      ordered subject objects
- * @param {Set}     usedIdsToday     Set of subject ids already placed today
- * @param {string}  grade            grade string e.g. '5'
- * @param {Array}   faculties        all faculties list
- * @param {string}  day              day string e.g. 'Monday'
- * @param {Object}  facultyBusyMap   busy intervals map
- * @returns {Array} placed block objects
- */
-function fillSession(sessionStart, sessionEnd, subjectPool, usedIdsToday, grade = '', faculties = [], day = '', facultyBusyMap = {}) {
+function fillSession(sessionStart, sessionEnd, subjectPool, usedIdsToday, grade = '', faculties = [], day = '', facultyBusyMap = {}, configuredSlots = []) {
   const blocks = [];
   const totalDuration = sessionEnd - sessionStart;
   if (totalDuration <= 0 || !subjectPool || !subjectPool.length) return blocks;
 
   let cursor = sessionStart;
+
+  // Filter configured timeSlots that fall strictly within [sessionStart, sessionEnd]
+  const periodSlots = (configuredSlots || []).filter(s =>
+    (s.type === 'period' || !s.type) &&
+    s.startMins >= sessionStart &&
+    s.endMins <= sessionEnd &&
+    s.endMins > s.startMins
+  ).sort((a, b) => a.startMins - b.startMins);
+
+  if (periodSlots.length > 0) {
+    let attemptCount = 0;
+    for (const slot of periodSlots) {
+      if (slot.startMins < cursor) continue;
+
+      if (slot.startMins > cursor) {
+        const gapDur = slot.startMins - cursor;
+        if (gapDur >= 15) {
+          const gapSubj = subjectPool.find(s => !usedIdsToday.has(s.id)) || subjectPool[0];
+          if (gapSubj) {
+            blocks.push({
+              kind: 'ACADEMIC',
+              subjectId: gapSubj.id,
+              name: gapSubj.name,
+              subjectCode: gapSubj.code,
+              subjectColor: gapSubj.color,
+              duration: gapDur,
+              startMins: cursor,
+              endMins: slot.startMins,
+              start: fmt(cursor),
+              end: fmt(slot.startMins),
+              subject: gapSubj.data
+            });
+            usedIdsToday.add(gapSubj.id);
+          }
+        }
+        cursor = slot.startMins;
+      }
+
+      attemptCount++;
+      let candidates = subjectPool.filter(s => !usedIdsToday.has(s.id));
+      if (candidates.length === 0) candidates = subjectPool;
+
+      let chosenSubj = candidates.find(s => {
+        const fac = findBestFacultyForSubject(s.data, grade, faculties, day, slot.startMins, slot.endMins, facultyBusyMap);
+        return Boolean(fac && fac.id);
+      });
+      if (!chosenSubj) chosenSubj = candidates[(attemptCount - 1) % candidates.length];
+      if (!chosenSubj) continue;
+
+      const dur = slot.endMins - slot.startMins;
+      blocks.push({
+        kind: 'ACADEMIC',
+        subjectId: chosenSubj.id,
+        name: chosenSubj.name,
+        subjectCode: chosenSubj.code,
+        subjectColor: chosenSubj.color,
+        duration: dur,
+        startMins: slot.startMins,
+        endMins: slot.endMins,
+        start: fmt(slot.startMins),
+        end: fmt(slot.endMins),
+        subject: chosenSubj.data
+      });
+      usedIdsToday.add(chosenSubj.id);
+      cursor = slot.endMins;
+    }
+
+    if (sessionEnd > cursor && sessionEnd - cursor >= 10) {
+      const remDur = sessionEnd - cursor;
+      const remSubj = subjectPool.find(s => !usedIdsToday.has(s.id)) || subjectPool[0];
+      if (remSubj) {
+        blocks.push({
+          kind: 'ACADEMIC',
+          subjectId: remSubj.id,
+          name: remSubj.name,
+          subjectCode: remSubj.code,
+          subjectColor: remSubj.color,
+          duration: remDur,
+          startMins: cursor,
+          endMins: sessionEnd,
+          start: fmt(cursor),
+          end: fmt(sessionEnd),
+          subject: remSubj.data
+        });
+      }
+    }
+    return blocks;
+  }
+
+  // Fallback: standard dynamic fill if no configured timeSlots exist in this interval
   let remaining = totalDuration;
   let attemptCount = 0;
   const maxAttempts = 20;
 
   while (remaining > 0 && attemptCount < maxAttempts) {
     attemptCount++;
-
-    // Filter for subjects not yet used today; if all have been used today, fall back to entire pool
     let candidates = subjectPool.filter(s => !usedIdsToday.has(s.id));
-    if (candidates.length === 0) {
-      candidates = subjectPool;
-    }
+    if (candidates.length === 0) candidates = subjectPool;
 
-    // Smart candidate selection: prioritize subject whose faculty is FREE at [cursor, cursor + duration]
     let chosenSubj = candidates.find(s => {
       const fac = findBestFacultyForSubject(s.data, grade, faculties, day, cursor, cursor + s.duration, facultyBusyMap);
       return Boolean(fac && fac.id);
     });
 
-    // Fallback: pick sequentially from candidates if no subject has a free faculty right now
-    if (!chosenSubj) {
-      chosenSubj = candidates[(attemptCount - 1) % candidates.length];
-    }
+    if (!chosenSubj) chosenSubj = candidates[(attemptCount - 1) % candidates.length];
     if (!chosenSubj) break;
 
     // Use subject's natural duration, or remaining time if remaining is smaller
@@ -420,10 +496,24 @@ export function generateAutoTimetable(params) {
     subjects        = [],
     ecaSchedule     = {},
     bellConfig      = {},
+    timeSlots       = [],
     targetClassId   = 'all',
     targetGrade     = 'all',
     existingTimetable = []
   } = params;
+
+  // Parse timeSlots into configuredTimeSlots array
+  const configuredTimeSlots = (timeSlots || []).map(s => {
+    const startMins = parseTime(s.startTime);
+    const endMins = parseTime(s.endTime);
+    return {
+      slotNo: s.slotNo,
+      name: s.name,
+      type: s.type || 'period',
+      startMins,
+      endMins: endMins > startMins ? endMins : startMins + 45
+    };
+  }).filter(s => s.startMins > 0 && s.endMins > s.startMins);
 
   // ── Parse bell times (all in minutes from midnight) ──
   const sStartM = parseTime(bellConfig.schoolStartTime    || '08:30 AM');
@@ -540,8 +630,7 @@ export function generateAutoTimetable(params) {
         const parsed = parseDur(ecaMap[pfKey].duration);
         if (parsed && parsed > 0) pfDur = parsed;
       }
-      // Clamp: must fit before morning break with at least 5 mins for academics
-      pfDur = Math.max(5, Math.min(pfDur, mBsM - sStartM - 5));
+      pfDur = Math.max(5, Math.min(pfDur, (mBsM > sStartM ? mBsM - sStartM - 5 : 30)));
 
       // ── Build today's subject pool (shuffled for variety) ──
       const daySeed = classSeed * 31 + dayIndex * 17 + day.charCodeAt(0);
@@ -550,13 +639,13 @@ export function generateAutoTimetable(params) {
       // Track which subjects have been placed today (no duplicates)
       const usedToday = new Set();
 
-      // ── COLLECT timeline blocks for this day ──
-      const dayBlocks = [];
+      // ── 1. COLLECT ALL FIXED ANCHOR BLOCKS FIRST (Physical Fitness + Breaks + DB ECA Activities) ──
+      const rawAnchors = [];
 
-      // ── 1. PHYSICAL FITNESS (always first block) ──
+      // A. Physical Fitness (always start of school day)
       const pfStart = sStartM;
       const pfEnd   = sStartM + pfDur;
-      dayBlocks.push({
+      rawAnchors.push({
         kind: 'ANCHOR',
         name: 'Physical Fitness',
         subjectId: 'sub_physical_fitness',
@@ -571,138 +660,225 @@ export function generateAutoTimetable(params) {
         ecaTag: null
       });
 
-      // ── 2. SESSION A: physFitnessEnd → morningBreakStart ──
-      const sA = fillSession(pfEnd, mBsM, dayPool, usedToday, grade, faculties, day, facultyBusyMap);
-      dayBlocks.push(...sA);
+      // B. Morning Break (fixed)
+      if (mBeM > mBsM) {
+        rawAnchors.push({
+          kind: 'BREAK',
+          name: 'Morning Break',
+          subjectId: 'break_morning',
+          subjectCode: 'BREAK',
+          subjectColor: '#f59e0b',
+          venueType: 'break',
+          duration: mBeM - mBsM,
+          start: fmt(mBsM), end: fmt(mBeM),
+          startMins: mBsM, endMins: mBeM, ecaTag: 'Morning Break'
+        });
+      }
 
-      // ── 3. MORNING BREAK (fixed) ──
-      dayBlocks.push({
-        kind: 'BREAK',
-        name: 'Morning Break',
-        subjectId: 'break_morning',
-        subjectCode: 'BREAK',
-        subjectColor: '#f59e0b',
-        venueType: 'break',
-        duration: mBeM - mBsM,
-        start: fmt(mBsM), end: fmt(mBeM),
-        startMins: mBsM, endMins: mBeM, ecaTag: 'Morning Break'
-      });
+      // C. Lunch Break (fixed)
+      if (lBeM > lBsM) {
+        rawAnchors.push({
+          kind: 'LUNCH',
+          name: 'Lunch Break',
+          subjectId: 'break_lunch',
+          subjectCode: 'LUNCH',
+          subjectColor: '#ef4444',
+          venueType: 'lunch',
+          duration: lBeM - lBsM,
+          start: fmt(lBsM), end: fmt(lBeM),
+          startMins: lBsM, endMins: lBeM, ecaTag: 'Lunch Break'
+        });
+      }
 
-      // ── 4. SESSION B: morningBreakEnd → lunchBreakStart ──
-      const sB = fillSession(mBeM, lBsM, dayPool, usedToday, grade, faculties, day, facultyBusyMap);
-      dayBlocks.push(...sB);
+      // D. Afternoon Break (fixed)
+      if (aBeM > aBsM) {
+        rawAnchors.push({
+          kind: 'BREAK',
+          name: 'Afternoon Break',
+          subjectId: 'break_afternoon',
+          subjectCode: 'BREAK',
+          subjectColor: '#f59e0b',
+          venueType: 'break',
+          duration: aBeM - aBsM,
+          start: fmt(aBsM), end: fmt(aBeM),
+          startMins: aBsM, endMins: aBeM, ecaTag: 'Afternoon Break'
+        });
+      }
 
-      // ── 5. LUNCH BREAK (fixed) ──
-      dayBlocks.push({
-        kind: 'LUNCH',
-        name: 'Lunch Break',
-        subjectId: 'break_lunch',
-        subjectCode: 'LUNCH',
-        subjectColor: '#ef4444',
-        venueType: 'lunch',
-        duration: lBeM - lBsM,
-        start: fmt(lBsM), end: fmt(lBeM),
-        startMins: lBsM, endMins: lBeM, ecaTag: 'Lunch Break'
-      });
-
-      // ── 6. ECA BLOCKS (post-lunch, clamped to afternoonBreakStart) ──
-      let ecaCursor = lBeM;
-
-      // Sort ECA entries so that 'English Song' is placed first right next to Lunch Break
-      const ecaEntries = Object.entries(ecaMap).sort(([nameA], [nameB]) => {
-        const isA_Song = nameA.toLowerCase().includes('english song') || nameA.toLowerCase().includes('song');
-        const isB_Song = nameB.toLowerCase().includes('english song') || nameB.toLowerCase().includes('song');
-        if (isA_Song && !isB_Song) return -1;
-        if (!isA_Song && isB_Song) return 1;
-        return 0;
-      });
+      // E. All Active ECA Activities from Database (placed at exact DB startTime & endTime)
+      let defaultEcaCursor = lBeM; // Default post-lunch fallback if no explicit timing
+      const ecaEntries = Object.entries(ecaMap);
 
       ecaEntries.forEach(([vertName, vertData]) => {
-        // Skip Physical Fitness — already placed as block #1
+        // Skip Physical Fitness — handled as block #1
         if (vertName.toLowerCase().includes('fitness') || vertName.toLowerCase().includes('physical fitness')) return;
 
-        // Stop if no more room before Afternoon Break
-        if (ecaCursor >= aBsM) return;
-
-        // Check if this ECA is active
         const isActive = vertData && (
           vertData.active === true ||
           (vertData.label && vertData.label !== 'No' && !String(vertData.label).startsWith('No'))
         );
         if (!isActive) return;
 
-        let ecaDur = parseDur(vertData.duration) || 30;
-        ecaDur = Math.max(5, r5(ecaDur));
+        let bStart = defaultEcaCursor;
+        let bEnd = defaultEcaCursor + 30;
 
-        // Clamp: don't push past Afternoon Break
-        const remaining = aBsM - ecaCursor;
-        if (remaining <= 0) return;
-        ecaDur = Math.min(ecaDur, remaining);
-
-        const target  = vertData.target || 'All';
-        const isBoth  = target === 'Both' ||
-          (vertData.label && (vertData.label.includes('Both') || vertData.label.includes('Boys & Girls')));
-
-        if (isBoth) {
-          const halfAvail = Math.floor((aBsM - ecaCursor) / 2);
-          const boys = Math.min(ecaDur, halfAvail);
-          if (boys >= 5) {
-            dayBlocks.push({
-              kind: 'ECA_ANCHOR', name: `${vertName} (Boys)`,
-              subjectId: `eca_${vertName.toLowerCase().replace(/\s+/g,'_')}_boys`,
-              subjectCode: 'ECA', subjectColor: vertData.color || '#d97706', venueType: 'eca',
-              duration: boys, start: fmt(ecaCursor), end: fmt(ecaCursor + boys),
-              startMins: ecaCursor, endMins: ecaCursor + boys, ecaTag: `${vertName} (Boys)`
-            });
-            ecaCursor += boys;
+        // Priority 1: Use explicit startTime & endTime fields from DB
+        if (vertData.startTime && vertData.endTime) {
+          const parsedS = parseTime(vertData.startTime);
+          const parsedE = parseTime(vertData.endTime);
+          if (parsedS > 0 && parsedE > parsedS) {
+            bStart = parsedS;
+            bEnd = parsedE;
           }
-          const girlsAvail = aBsM - ecaCursor;
-          const girls = Math.min(ecaDur, girlsAvail);
-          if (girls >= 5 && ecaCursor < aBsM) {
-            dayBlocks.push({
-              kind: 'ECA_ANCHOR', name: `${vertName} (Girls)`,
-              subjectId: `eca_${vertName.toLowerCase().replace(/\s+/g,'_')}_girls`,
-              subjectCode: 'ECA', subjectColor: vertData.color || '#d97706', venueType: 'eca',
-              duration: girls, start: fmt(ecaCursor), end: fmt(ecaCursor + girls),
-              startMins: ecaCursor, endMins: ecaCursor + girls, ecaTag: `${vertName} (Girls)`
-            });
-            ecaCursor += girls;
+        // Priority 2: Parse from periodTime field
+        } else if (vertData.periodTime) {
+          const parsedRange = parseTimeRangeFromText(vertData.periodTime);
+          if (parsedRange.startTime && parsedRange.endTime) {
+            const parsedS = parseTime(parsedRange.startTime);
+            const parsedE = parseTime(parsedRange.endTime);
+            if (parsedS > 0 && parsedE > parsedS) {
+              bStart = parsedS;
+              bEnd = parsedE;
+            }
           }
-        } else {
-          const displayName = (target && target !== 'All') ? `${vertName} (${target})` : vertName;
-          dayBlocks.push({
-            kind: 'ECA_ANCHOR', name: displayName,
-            subjectId: `eca_${vertName.toLowerCase().replace(/\s+/g,'_')}_${target.toLowerCase()}`,
-            subjectCode: 'ECA', subjectColor: vertData.color || '#d97706', venueType: 'eca',
-            duration: ecaDur, start: fmt(ecaCursor), end: fmt(ecaCursor + ecaDur),
-            startMins: ecaCursor, endMins: ecaCursor + ecaDur, ecaTag: displayName
-          });
-          ecaCursor += ecaDur;
+        // Priority 3: Parse time range from the label field (e.g. "Yes (9:45AM - 10:45AM)")
+        } else if (vertData.label) {
+          const parsedRange = parseTimeRangeFromText(vertData.label);
+          if (parsedRange.startTime && parsedRange.endTime) {
+            const parsedS = parseTime(parsedRange.startTime);
+            const parsedE = parseTime(parsedRange.endTime);
+            if (parsedS > 0 && parsedE > parsedS) {
+              bStart = parsedS;
+              bEnd = parsedE;
+            }
+          }
+        }
+
+        // Sanity check: if parsed time range implies an unreasonable duration (> 3 hours for ECA),
+        // but we have a known duration field, use startTime + duration instead.
+        // This catches AM/PM typos like "9:45AM - 10:45PM" when duration says "1 hour".
+        if (bStart !== defaultEcaCursor && (bEnd - bStart) > 180 && vertData.duration) {
+          const knownDur = parseDur(vertData.duration);
+          if (knownDur && knownDur > 0 && knownDur <= 180) {
+            bEnd = bStart + knownDur;
+          }
+        }
+
+        // Final fallback: use duration to calculate end time from cursor
+        if (bStart === defaultEcaCursor && bEnd === defaultEcaCursor + 30) {
+          let dur = parseDur(vertData.duration) || 30;
+          dur = Math.max(5, r5(dur));
+          bEnd = bStart + dur;
+          defaultEcaCursor = bEnd;
+        }
+
+        const durMins = bEnd - bStart;
+        const target = vertData.target || 'All';
+        const displayName = (target && target !== 'All') ? `${vertName} (${target})` : vertName;
+
+        rawAnchors.push({
+          kind: 'ECA_ANCHOR',
+          name: displayName,
+          subjectId: `eca_${vertName.toLowerCase().replace(/\s+/g, '_')}`,
+          subjectCode: 'ECA',
+          subjectColor: vertData.color || '#d97706',
+          venueType: 'eca',
+          duration: durMins,
+          start: fmt(bStart),
+          end: fmt(bEnd),
+          startMins: bStart,
+          endMins: bEnd,
+          ecaTag: displayName
+        });
+      });
+
+      // ── STRICT OVERLAP RESOLUTION ──
+      // Sort raw anchors chronologically
+      rawAnchors.sort((a, b) => a.startMins - b.startMins || a.endMins - b.endMins);
+
+      // Step 1: Merge ECA blocks that occupy the same time range (parallel activities)
+      const mergedAnchors = [];
+      rawAnchors.forEach(anchor => {
+        if (anchor.kind === 'ECA_ANCHOR' && mergedAnchors.length > 0) {
+          const prev = mergedAnchors[mergedAnchors.length - 1];
+          if (prev.kind === 'ECA_ANCHOR' && prev.startMins === anchor.startMins && prev.endMins === anchor.endMins) {
+            // Same time slot — merge names (e.g. "Classical Dance (Girls) / Table Tennis (Boys)")
+            prev.name = `${prev.name} / ${anchor.name}`;
+            prev.ecaTag = prev.name;
+            return;
+          }
+        }
+        mergedAnchors.push(anchor);
+      });
+
+      // Step 2: Resolve remaining overlaps
+      const resolvedAnchors = [];
+      let lastEnd = sStartM;
+
+      mergedAnchors.forEach((anchor) => {
+        let aStart = anchor.startMins;
+        let aEnd = anchor.endMins;
+
+        // If this anchor overlaps with the previous resolved anchor
+        if (aStart < lastEnd) {
+          if (anchor.kind === 'BREAK' || anchor.kind === 'LUNCH') {
+            // Check if a fixed ECA spans across this break — if so, skip the break
+            const prev = resolvedAnchors.length > 0 ? resolvedAnchors[resolvedAnchors.length - 1] : null;
+            if (prev && prev.kind === 'ECA_ANCHOR' && prev.endMins > aEnd) {
+              // ECA completely covers the break — skip this break entirely
+              return;
+            }
+            // Otherwise, truncate the preceding ECA to end at break start
+            if (prev && prev.kind === 'ECA_ANCHOR' && prev.endMins > aStart) {
+              prev.endMins = aStart;
+              prev.duration = prev.endMins - prev.startMins;
+              prev.end = fmt(prev.endMins);
+              if (prev.duration <= 0) resolvedAnchors.pop();
+            }
+          } else if (anchor.kind === 'ECA_ANCHOR') {
+            // Two different ECA activities overlap — place sequentially
+            const dur = aEnd - aStart;
+            aStart = lastEnd;
+            aEnd = aStart + dur;
+          } else {
+            // Other anchor overlap — shift start
+            aStart = lastEnd;
+            if (aEnd <= aStart) return;
+          }
+        }
+
+        // Keep anchor if it fits before school ends and has positive duration
+        if (aStart < sEndM && aEnd > aStart) {
+          anchor.startMins = aStart;
+          anchor.endMins = Math.min(aEnd, sEndM);
+          anchor.duration = anchor.endMins - anchor.startMins;
+          anchor.start = fmt(anchor.startMins);
+          anchor.end = fmt(anchor.endMins);
+          resolvedAnchors.push(anchor);
+          lastEnd = anchor.endMins;
         }
       });
 
-      // ── 7. SESSION C: remaining post-ECA gap → afternoonBreakStart ──
-      if (ecaCursor < aBsM) {
-        const sC = fillSession(ecaCursor, aBsM, dayPool, usedToday, grade, faculties, day, facultyBusyMap);
-        dayBlocks.push(...sC);
-      }
+      // ── 2. FILL ALL REMAINING GAPS ON THE TIMELINE WITH ACADEMIC SUBJECTS ──
+      const dayBlocks = [];
+      let timelineCursor = sStartM;
 
-      // ── 8. AFTERNOON BREAK (fixed) ──
-      dayBlocks.push({
-        kind: 'BREAK',
-        name: 'Afternoon Break',
-        subjectId: 'break_afternoon',
-        subjectCode: 'BREAK',
-        subjectColor: '#f59e0b',
-        venueType: 'break',
-        duration: aBeM - aBsM,
-        start: fmt(aBsM), end: fmt(aBeM),
-        startMins: aBsM, endMins: aBeM, ecaTag: 'Afternoon Break'
+      resolvedAnchors.forEach(anchor => {
+        if (anchor.startMins > timelineCursor) {
+          const academicBlocks = fillSession(timelineCursor, anchor.startMins, dayPool, usedToday, grade, faculties, day, facultyBusyMap, configuredTimeSlots);
+          dayBlocks.push(...academicBlocks);
+        }
+        dayBlocks.push(anchor);
+        timelineCursor = anchor.endMins;
       });
 
-      // ── 9. SESSION D: afternoonBreakEnd → schoolEnd ──
-      const sD = fillSession(aBeM, sEndM, dayPool, usedToday, grade, faculties, day, facultyBusyMap);
-      dayBlocks.push(...sD);
+      if (sEndM > timelineCursor) {
+        const finalAcademics = fillSession(timelineCursor, sEndM, dayPool, usedToday, grade, faculties, day, facultyBusyMap, configuredTimeSlots);
+        dayBlocks.push(...finalAcademics);
+      }
+
+      // Sort final dayBlocks strictly by startMins for clean period sequence
+      dayBlocks.sort((a, b) => a.startMins - b.startMins);
 
       // ── Convert blocks → timetable slot records ──
       dayBlocks.forEach(block => {

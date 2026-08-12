@@ -2,7 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import {
   DAYS,
   PERIODS,
-  VENUE_TYPES
+  VENUE_TYPES,
+  API_BASE_URL
 } from '../utils/constants';
 import { generateAutoTimetable } from '../utils/timetableGenerator';
 
@@ -140,15 +141,15 @@ export function SchoolProvider({ children }) {
         bellConfigData,
         timetablesData
       ] = await Promise.all([
-        safeFetchJSON('http://localhost:5000/api/classes'),
-        safeFetchJSON('http://localhost:5000/api/courses'),
-        safeFetchJSON('http://localhost:5000/api/venues'),
-        safeFetchJSON('http://localhost:5000/api/faculties'),
-        safeFetchJSON('http://localhost:5000/api/grades'),
-        safeFetchJSON('http://localhost:5000/api/eca'),
-        safeFetchJSON('http://localhost:5000/api/time-slots'),
-        safeFetchJSON('http://localhost:5000/api/time-slots/bell-config'),
-        safeFetchJSON('http://localhost:5000/api/timetables')
+        safeFetchJSON(`${API_BASE_URL}/classes`),
+        safeFetchJSON(`${API_BASE_URL}/courses`),
+        safeFetchJSON(`${API_BASE_URL}/venues`),
+        safeFetchJSON(`${API_BASE_URL}/faculties`),
+        safeFetchJSON(`${API_BASE_URL}/grades`),
+        safeFetchJSON(`${API_BASE_URL}/eca`),
+        safeFetchJSON(`${API_BASE_URL}/time-slots`),
+        safeFetchJSON(`${API_BASE_URL}/time-slots/bell-config`),
+        safeFetchJSON(`${API_BASE_URL}/timetables`)
       ]);
 
       if (classesData) {
@@ -282,7 +283,7 @@ export function SchoolProvider({ children }) {
     };
     setEcaSchedule(nextEcaSchedule);
     try {
-      await fetch('http://localhost:5000/api/eca/cell', {
+      await fetch(`${API_BASE_URL}/eca/cell`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ day, vertical, grade, ...newCellData })
@@ -297,6 +298,7 @@ export function SchoolProvider({ children }) {
       subjects,
       ecaSchedule: nextEcaSchedule,
       bellConfig,
+      timeSlots,
       targetClassId: 'all',
       targetGrade: 'all',
       existingTimetable: []
@@ -340,7 +342,7 @@ export function SchoolProvider({ children }) {
       });
 
       try {
-        const res = await fetch('http://localhost:5000/api/eca/vertical', {
+        const res = await fetch(`${API_BASE_URL}/eca/vertical`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: cleanVertical, gradeIds })
@@ -371,7 +373,7 @@ export function SchoolProvider({ children }) {
     });
 
     try {
-      const res = await fetch('http://localhost:5000/api/eca/vertical', {
+      const res = await fetch(`${API_BASE_URL}/eca/vertical`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: cleanVertical, gradeIds })
@@ -400,7 +402,7 @@ export function SchoolProvider({ children }) {
       return next;
     });
     try {
-      await fetch(`http://localhost:5000/api/eca/vertical/${encodeURIComponent(verticalName)}`, {
+      await fetch(`${API_BASE_URL}/eca/vertical/${encodeURIComponent(verticalName)}`, {
         method: 'DELETE'
       });
     } catch (err) {
@@ -424,7 +426,7 @@ export function SchoolProvider({ children }) {
       : String(rawTargetGrade).replace('Grade ', '').trim();
     const targetClassId = String(options.targetClassId || 'all');
 
-    // ⛔ CONSTRAINT CHECK 1: Ensure master course subjects exist in the system
+    // CONSTRAINT CHECK 1: Ensure master course subjects exist in the system
     if (!subjects || subjects.length === 0) {
       showToast('Cannot generate timetable: No Master Course subjects configured in the system. Please add courses in Primary Data Entry first.', 'danger');
       return;
@@ -463,7 +465,7 @@ export function SchoolProvider({ children }) {
       return false;
     };
 
-    // ⛔ CONSTRAINT CHECK 2: If targetGrade is specified, check if subjects exist for target grade
+    // CONSTRAINT CHECK 2: If targetGrade is specified, check if subjects exist for target grade
     if (targetGrade !== 'all') {
       const gradeSubjects = subjects.filter(s => isSubjectForGrade(s, targetGrade));
 
@@ -473,7 +475,7 @@ export function SchoolProvider({ children }) {
       }
     }
 
-    // ⛔ CONSTRAINT CHECK 3: If targetClassId is specified, check if class's grade has subjects
+    // CONSTRAINT CHECK 3: If targetClassId is specified, check if class's grade has subjects
     if (targetClassId !== 'all') {
       const targetClass = classes.find(c => String(c.id) === String(targetClassId));
       if (targetClass) {
@@ -499,6 +501,7 @@ export function SchoolProvider({ children }) {
       subjects,
       ecaSchedule,
       bellConfig,
+      timeSlots,
       targetClassId: targetClassId,
       targetGrade: targetGrade,
       existingTimetable: existingWeekSlots
@@ -512,7 +515,7 @@ export function SchoolProvider({ children }) {
 
     // Persist all generated slots to MySQL backend database
     try {
-      await fetch('http://localhost:5000/api/timetables/save', {
+      await fetch(`${API_BASE_URL}/timetables/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slots: result.timetable })
@@ -533,7 +536,7 @@ export function SchoolProvider({ children }) {
     });
 
     try {
-      await fetch(`http://localhost:5000/api/timetables/all`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/timetables/all`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Failed to delete timetable slots from MySQL DB:', err.message);
     }
@@ -558,7 +561,7 @@ export function SchoolProvider({ children }) {
     showToast(`Faculty member "${itemWithId.name}" added successfully.`);
 
     try {
-      const res = await fetch('http://localhost:5000/api/faculties', {
+      const res = await fetch(`${API_BASE_URL}/faculties`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -577,7 +580,7 @@ export function SchoolProvider({ children }) {
     showToast(`Faculty profile updated for ${updatedFaculty.name}.`);
 
     try {
-      await fetch(`http://localhost:5000/api/faculties/${updatedFaculty.id}`, {
+      await fetch(`${API_BASE_URL}/faculties/${updatedFaculty.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFaculty)
@@ -593,7 +596,7 @@ export function SchoolProvider({ children }) {
     showToast(`Faculty ${f?.name || ''} removed.`, 'warning');
 
     try {
-      await fetch(`http://localhost:5000/api/faculties/${facultyId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/faculties/${facultyId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -609,7 +612,7 @@ export function SchoolProvider({ children }) {
     showToast(`Venue "${itemWithId.roomNo} - ${itemWithId.name}" added.`);
 
     try {
-      const res = await fetch('http://localhost:5000/api/venues', {
+      const res = await fetch(`${API_BASE_URL}/venues`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -628,7 +631,7 @@ export function SchoolProvider({ children }) {
     showToast(`Venue details updated for ${updatedVenue.roomNo}.`);
 
     try {
-      await fetch(`http://localhost:5000/api/venues/${updatedVenue.id}`, {
+      await fetch(`${API_BASE_URL}/venues/${updatedVenue.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedVenue)
@@ -644,7 +647,7 @@ export function SchoolProvider({ children }) {
     showToast(`Venue ${v?.roomNo || ''} removed.`, 'warning');
 
     try {
-      await fetch(`http://localhost:5000/api/venues/${venueId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/venues/${venueId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -660,7 +663,7 @@ export function SchoolProvider({ children }) {
     showToast(`Class "${itemWithId.name}" created.`);
 
     try {
-      const res = await fetch('http://localhost:5000/api/classes', {
+      const res = await fetch(`${API_BASE_URL}/classes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -679,7 +682,7 @@ export function SchoolProvider({ children }) {
     showToast(`Class "${updatedClass.name}" updated.`);
 
     try {
-      await fetch(`http://localhost:5000/api/classes/${updatedClass.id}`, {
+      await fetch(`${API_BASE_URL}/classes/${updatedClass.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedClass)
@@ -695,7 +698,7 @@ export function SchoolProvider({ children }) {
     showToast(`Class "${c?.name || ''}" removed.`, 'warning');
 
     try {
-      await fetch(`http://localhost:5000/api/classes/${classId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/classes/${classId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -711,7 +714,7 @@ export function SchoolProvider({ children }) {
     showToast(`Subject "${itemWithId.name}" (${itemWithId.code}) added.`);
 
     try {
-      const res = await fetch('http://localhost:5000/api/courses', {
+      const res = await fetch(`${API_BASE_URL}/courses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -730,7 +733,7 @@ export function SchoolProvider({ children }) {
     showToast(`Subject "${updatedSubj.name}" updated.`);
 
     try {
-      await fetch(`http://localhost:5000/api/courses/${updatedSubj.id}`, {
+      await fetch(`${API_BASE_URL}/courses/${updatedSubj.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedSubj)
@@ -746,7 +749,7 @@ export function SchoolProvider({ children }) {
     showToast(`Subject "${s?.name || ''}" removed.`, 'warning');
 
     try {
-      await fetch(`http://localhost:5000/api/courses/${subjectId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/courses/${subjectId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -762,7 +765,7 @@ export function SchoolProvider({ children }) {
     showToast(`Grade level "${itemWithId.name}" saved.`);
 
     try {
-      const res = await fetch('http://localhost:5000/api/grades', {
+      const res = await fetch(`${API_BASE_URL}/grades`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -782,7 +785,7 @@ export function SchoolProvider({ children }) {
     showToast(`Grade level updated.`);
 
     try {
-      await fetch(`http://localhost:5000/api/grades/${id}`, {
+      await fetch(`${API_BASE_URL}/grades/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(gradeData)
@@ -798,7 +801,7 @@ export function SchoolProvider({ children }) {
     showToast(`Grade level "${target?.name || ''}" removed.`, 'warning');
 
     try {
-      await fetch(`http://localhost:5000/api/grades/${id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/grades/${id}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -814,7 +817,7 @@ export function SchoolProvider({ children }) {
     showToast(`Time slot "${itemWithId.name}" added successfully.`);
 
     try {
-      const res = await fetch('http://localhost:5000/api/time-slots', {
+      const res = await fetch(`${API_BASE_URL}/time-slots`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -833,7 +836,7 @@ export function SchoolProvider({ children }) {
     showToast(`Time slot "${updatedSlot.name}" updated.`);
 
     try {
-      await fetch(`http://localhost:5000/api/time-slots/${updatedSlot.id}`, {
+      await fetch(`${API_BASE_URL}/time-slots/${updatedSlot.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedSlot)
@@ -849,7 +852,7 @@ export function SchoolProvider({ children }) {
     showToast(`Time slot "${target?.name || ''}" deleted.`, 'warning');
 
     try {
-      await fetch(`http://localhost:5000/api/time-slots/${slotId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/time-slots/${slotId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -860,7 +863,7 @@ export function SchoolProvider({ children }) {
     showToast('Bell Schedule parameters saved successfully.');
 
     try {
-      const res = await fetch('http://localhost:5000/api/time-slots/bell-config', {
+      const res = await fetch(`${API_BASE_URL}/time-slots/bell-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newConfig)
@@ -908,7 +911,7 @@ export function SchoolProvider({ children }) {
 
     if (updatedSlotObj) {
       try {
-        await fetch(`http://localhost:5000/api/timetables/slot/${encodeURIComponent(slotId)}`, {
+        await fetch(`${API_BASE_URL}/timetables/slot/${encodeURIComponent(slotId)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedSlotObj)
@@ -929,7 +932,7 @@ export function SchoolProvider({ children }) {
     });
 
     try {
-      await fetch(`http://localhost:5000/api/timetables/slot/${encodeURIComponent(slotId)}`, {
+      await fetch(`${API_BASE_URL}/timetables/slot/${encodeURIComponent(slotId)}`, {
         method: 'DELETE'
       });
     } catch (err) {
@@ -955,7 +958,7 @@ export function SchoolProvider({ children }) {
 
     try {
       const endpointTarget = classId !== 'ALL' ? classId : (gradeFilter !== 'ALL' ? `grade_${gradeFilter}` : 'all');
-      await fetch(`http://localhost:5000/api/timetables/${encodeURIComponent(endpointTarget)}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/timetables/${encodeURIComponent(endpointTarget)}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Failed to clear timetable from MySQL DB:', err.message);
     }
@@ -1049,7 +1052,55 @@ export function useSchool() {
   const context = useContext(SchoolContext);
   if (!context) {
     console.warn('useSchool was invoked outside of SchoolProvider or context is not yet initialized.');
-    return {};
+    // Return safe fallback with no-op functions so components don't crash during mount/HMR
+    return {
+      isAuthenticated: false,
+      currentUser: null,
+      login: () => {},
+      logout: () => {},
+      activeTab: 'dashboard',
+      setActiveTab: () => {},
+      isPageLoading: false,
+      faculties: [],
+      venues: [],
+      classes: [],
+      subjects: [],
+      grades: [],
+      timetable: [],
+      timetableStats: {},
+      days: [],
+      periods: [],
+      venueTypes: [],
+      toast: { show: false, message: '', type: 'success' },
+      showToast: () => {},
+      ecaVerticals: [],
+      ecaSchedule: {},
+      bellConfig: {},
+      timeSlots: [],
+      setEcaVerticals: () => {},
+      setEcaSchedule: () => {},
+      setBellConfig: () => {},
+      setTimeSlots: () => {},
+      generateAutoTimetable: () => {},
+      addFaculty: () => {},
+      updateFaculty: () => {},
+      deleteFaculty: () => {},
+      addVenue: () => {},
+      updateVenue: () => {},
+      deleteVenue: () => {},
+      addClass: () => {},
+      updateClass: () => {},
+      deleteClass: () => {},
+      addSubject: () => {},
+      updateSubject: () => {},
+      deleteSubject: () => {},
+      addGrade: () => {},
+      updateGrade: () => {},
+      deleteGrade: () => {},
+      updateTimetableSlot: () => {},
+      deleteTimetableSlot: () => {},
+      clearTimetable: () => {}
+    };
   }
   return context;
 }

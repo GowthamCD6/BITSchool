@@ -378,6 +378,21 @@ export const EcaSchedule = sequelize.define('EcaSchedule', {
     allowNull: true,
     defaultValue: ''
   },
+  startTime: {
+    type: DataTypes.STRING(30),
+    allowNull: true,
+    defaultValue: ''
+  },
+  endTime: {
+    type: DataTypes.STRING(30),
+    allowNull: true,
+    defaultValue: ''
+  },
+  periodTime: {
+    type: DataTypes.STRING(60),
+    allowNull: true,
+    defaultValue: ''
+  },
   target: {
     type: DataTypes.STRING(50),
     allowNull: true,
@@ -662,9 +677,19 @@ export async function syncDatabase() {
 
     try {
       await sequelize.query("ALTER TABLE eca_schedules ADD COLUMN grade VARCHAR(20) DEFAULT '4';");
-    } catch (e) {
-      // Column already exists
-    }
+    } catch (e) {}
+
+    try {
+      await sequelize.query("ALTER TABLE eca_schedules ADD COLUMN startTime VARCHAR(30) DEFAULT '';");
+    } catch (e) {}
+
+    try {
+      await sequelize.query("ALTER TABLE eca_schedules ADD COLUMN endTime VARCHAR(30) DEFAULT '';");
+    } catch (e) {}
+
+    try {
+      await sequelize.query("ALTER TABLE eca_schedules ADD COLUMN periodTime VARCHAR(60) DEFAULT '';");
+    } catch (e) {}
 
     await GradeSubject.sync();
     await Venue.sync();

@@ -21,12 +21,12 @@
 
 import React, { useState, useMemo } from 'react';
 import { useSchool } from '../../context/SchoolContext';
-import ManualEditModal from '../../components/ManualEditModal';
 import ConfirmModal from '../../components/ConfirmModal';
 import { calculateDynamicPeriodsFromBellConfig } from '../../utils/timetableGenerator';
 import {
   Sparkles, Printer, Download, AlertTriangle,
-  Coffee, Utensils, Activity, Trash2, Edit3, BookOpen
+  Coffee, Utensils, Activity, BookOpen, Trash2,
+  Bell, Award, School, User, MapPin, Check, Clock
 } from 'lucide-react';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -187,10 +187,8 @@ function SlotRow({ slot, onEdit, onDelete, viewMode }) {
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          gap: '2px',
-          cursor: isFixed ? 'default' : 'pointer'
+          gap: '2px'
         }}
-        onClick={() => !isFixed && onEdit && onEdit(slot)}
       >
         {/* Subject name */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -207,19 +205,19 @@ function SlotRow({ slot, onEdit, onDelete, viewMode }) {
         {!isFixed && (
           <>
             {viewMode === 'faculty' ? (
-              <span style={{ fontSize: '0.60rem', color: '#1e40af', fontWeight: 700, lineHeight: 1.2 }}>
-                🏫 {slot.className || 'Class'}
+              <span style={{ fontSize: '0.60rem', color: '#1e40af', fontWeight: 700, lineHeight: 1.2, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <School size={10} /> {slot.className || 'Class'}
               </span>
             ) : (
               slot.facultyName && (
-                <span style={{ fontSize: '0.60rem', color: '#64748b', lineHeight: 1.2 }}>
-                  👤 {slot.facultyName}
+                <span style={{ fontSize: '0.60rem', color: '#64748b', lineHeight: 1.2, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  <User size={10} /> {slot.facultyName}
                 </span>
               )
             )}
             {slot.venueRoomNo && (
-              <span className="slot-room-no print-hide" style={{ fontSize: '0.58rem', color: '#94a3b8', lineHeight: 1.2 }}>
-                📍 {slot.venueRoomNo}
+              <span className="slot-room-no print-hide" style={{ fontSize: '0.58rem', color: '#94a3b8', lineHeight: 1.2, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <MapPin size={10} /> {slot.venueRoomNo}
               </span>
             )}
           </>
@@ -230,49 +228,13 @@ function SlotRow({ slot, onEdit, onDelete, viewMode }) {
           {slot.durationMins} mins
         </span>
       </div>
-
-      {/* Edit/Delete actions (academic only) */}
-      {!isFixed && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            gap: '2px',
-            padding: '4px 4px',
-            opacity: 0.5
-          }}
-          className="slot-actions"
-        >
-          {onEdit && (
-            <button
-              type="button"
-              title="Edit slot"
-              style={{ border: 'none', background: 'transparent', padding: '2px', cursor: 'pointer', color: '#94a3b8', borderRadius: '4px' }}
-              onClick={e => { e.stopPropagation(); onEdit(slot); }}
-            >
-              <Edit3 size={10} />
-            </button>
-          )}
-          {onDelete && (
-            <button
-              type="button"
-              title="Delete slot"
-              style={{ border: 'none', background: 'transparent', padding: '2px', cursor: 'pointer', color: '#fca5a5', borderRadius: '4px' }}
-              onClick={e => { e.stopPropagation(); onDelete(slot); }}
-            >
-              <Trash2 size={10} />
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
 // ─── DAY COLUMN COMPONENT ─────────────────────────────────────────────────────
 
-function DayColumn({ day, gradeStr, ecaLabel, slots, onEdit, onDelete, viewMode }) {
+function DayColumn({ day, gradeStr, ecaLabel, slots, viewMode }) {
   return (
     <div
       style={{
@@ -351,7 +313,7 @@ function DayColumn({ day, gradeStr, ecaLabel, slots, onEdit, onDelete, viewMode 
               whiteSpace: 'nowrap'
             }}
           >
-            ✨ {ecaLabel}
+            <Sparkles size={11} style={{ display: 'inline', marginRight: '3px', verticalAlign: 'middle' }} /> {ecaLabel}
           </div>
         )}
       </div>
@@ -384,8 +346,6 @@ function DayColumn({ day, gradeStr, ecaLabel, slots, onEdit, onDelete, viewMode 
             <SlotRow
               key={slot.id || idx}
               slot={slot}
-              onEdit={onEdit}
-              onDelete={onDelete}
               viewMode={viewMode}
             />
           ))
@@ -418,9 +378,8 @@ export default function TimetableScheduler() {
   const [selectedClassId, setSelectedClassId] = useState('');
 
   // ── Modal state ──
-  const [slotToEdit,          setSlotToEdit]          = useState(null);
-  const [slotToDelete,        setSlotToDelete]        = useState(null);
-  const [isConfirmClearOpen,  setIsConfirmClearOpen]  = useState(false);
+  const [isConfirmClearOpen,           setIsConfirmClearOpen]           = useState(false);
+  const [isAlreadyGeneratedModalOpen,  setIsAlreadyGeneratedModalOpen]  = useState(false);
 
   // ── Unique grade levels ──
   const uniqueGrades = useMemo(() => {
@@ -504,6 +463,12 @@ export default function TimetableScheduler() {
   const handleGenerateClassOnly = () => {
     if (!handleAutoGenerateTimetable) return;
     if (!activeClass) return;
+
+    if (hasTimetable) {
+      setIsAlreadyGeneratedModalOpen(true);
+      return;
+    }
+
     handleAutoGenerateTimetable({
       targetClassId: String(activeClass.id),
       targetGrade:   activeGrade || 'all'
@@ -555,21 +520,7 @@ export default function TimetableScheduler() {
     document.body.removeChild(link);
   };
 
-  // ── Summary stats ──
-  const daySlotCounts = useMemo(() => {
-    if (!activeClass) return {};
-    const counts = {};
-    activeDays.forEach(day => {
-      const slots = getDaySlots(day);
-      counts[day] = {
-        total:    slots.length,
-        academic: slots.filter(s => s.blockKind === 'ACADEMIC').length,
-        eca:      slots.filter(s => s.blockKind === 'ECA_ANCHOR').length,
-        breaks:   slots.filter(s => s.blockKind === 'BREAK' || s.blockKind === 'LUNCH').length
-      };
-    });
-    return counts;
-  }, [timetable, activeClass, activeDays]);
+
 
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -637,44 +588,12 @@ export default function TimetableScheduler() {
             >
               {filteredFaculties.map(f => (
                 <option key={f.id} value={f.id}>
-                  👤 {f.name} ({f.empId || 'Faculty'})
+                  {f.name} ({f.empId || 'Faculty'})
                 </option>
               ))}
             </select>
           )}
 
-          {/* Active summary */}
-          {viewMode === 'class' && activeClass && hasTimetable && (
-            <div
-              style={{
-                padding: '4px 12px',
-                background: '#f0fdf4',
-                border: '1px solid #bbf7d0',
-                borderRadius: '8px',
-                fontSize: '0.75rem',
-                color: '#166534',
-                fontWeight: 700
-              }}
-            >
-              ✓ {activeClass.name} — Grade {activeGrade} Timetable Ready
-            </div>
-          )}
-
-          {viewMode === 'faculty' && activeFaculty && hasTimetable && (
-            <div
-              style={{
-                padding: '4px 12px',
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                borderRadius: '8px',
-                fontSize: '0.75rem',
-                color: '#1e40af',
-                fontWeight: 700
-              }}
-            >
-              👤 {activeFaculty.name} — Teaching Schedule
-            </div>
-          )}
         </div>
 
         {/* Action buttons */}
@@ -760,11 +679,11 @@ export default function TimetableScheduler() {
           ))}
 
           {/* Bell times quick reference */}
-          <span style={{ marginLeft: 'auto', fontWeight: 600, color: '#94a3b8', fontSize: '0.65rem' }}>
-            🏫 {bellConfig.schoolStartTime} → {bellConfig.schoolEndTime}
-            &nbsp;|&nbsp;☕ {bellConfig.morningBreakStart} – {bellConfig.morningBreakEnd}
-            &nbsp;|&nbsp;🍽 {bellConfig.lunchBreakStart} – {bellConfig.lunchBreakEnd}
-            &nbsp;|&nbsp;☕ {bellConfig.afternoonBreakStart} – {bellConfig.afternoonBreakEnd}
+          <span style={{ marginLeft: 'auto', fontWeight: 600, color: '#94a3b8', fontSize: '0.65rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <span><Clock size={11} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{bellConfig.schoolStartTime} → {bellConfig.schoolEndTime}</span>
+            <span><Coffee size={11} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{bellConfig.morningBreakStart} – {bellConfig.morningBreakEnd}</span>
+            <span><Utensils size={11} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{bellConfig.lunchBreakStart} – {bellConfig.lunchBreakEnd}</span>
+            <span><Coffee size={11} style={{ verticalAlign: 'middle', marginRight: '3px' }} />{bellConfig.afternoonBreakStart} – {bellConfig.afternoonBreakEnd}</span>
           </span>
         </div>
       )}
@@ -832,10 +751,10 @@ export default function TimetableScheduler() {
           {/* Quick Info Cards */}
           <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem', flexWrap: 'wrap', justifyContent: 'center' }}>
             {[
-              { icon: '🔔', title: 'Bell Schedule', desc: `${bellConfig.schoolStartTime || '08:30 AM'} → ${bellConfig.schoolEndTime || '03:45 PM'}` },
-              { icon: '🏃', title: 'Physical Fitness', desc: 'Always first period of the day' },
-              { icon: '🎭', title: 'ECA Activities', desc: 'Fixed post-lunch, grade-specific' },
-              { icon: '📚', title: 'Academic Periods', desc: 'No duplicate subjects per day' }
+              { icon: <Bell size={24} color="#2563eb" />, title: 'Bell Schedule', desc: `${bellConfig.schoolStartTime || 'Configured'} ${bellConfig.schoolEndTime ? `→ ${bellConfig.schoolEndTime}` : ''}` },
+              { icon: <Activity size={24} color="#059669" />, title: 'Physical Fitness', desc: 'Always first period of the day' },
+              { icon: <Award size={24} color="#d97706" />, title: 'ECA Activities', desc: 'Fixed period timings, grade-specific' },
+              { icon: <BookOpen size={24} color="#7c3aed" />, title: 'Academic Periods', desc: 'No duplicate subjects per day' }
             ].map(({ icon, title, desc }) => (
               <div
                 key={title}
@@ -845,10 +764,13 @@ export default function TimetableScheduler() {
                   border: '1px solid #e2e8f0',
                   borderRadius: '12px',
                   textAlign: 'center',
-                  minWidth: '140px'
+                  minWidth: '140px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center'
                 }}
               >
-                <div style={{ fontSize: '1.5rem', marginBottom: '4px' }}>{icon}</div>
+                <div style={{ marginBottom: '6px' }}>{icon}</div>
                 <div style={{ fontWeight: 700, fontSize: '0.75rem', color: '#0f172a' }}>{title}</div>
                 <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '2px' }}>{desc}</div>
               </div>
@@ -882,90 +804,38 @@ export default function TimetableScheduler() {
                   gradeStr={activeGrade}
                   ecaLabel={ecaLabel}
                   slots={slots}
-                  onEdit={setSlotToEdit}
-                  onDelete={setSlotToDelete}
                   viewMode={viewMode}
                 />
               );
             })}
           </div>
 
-          {/* Summary row */}
-          <div
-            style={{
-              display: 'flex',
-              gap: '1rem',
-              marginTop: '1rem',
-              flexWrap: 'wrap'
-            }}
-          >
-            {activeDays.map(day => {
-              const c = daySlotCounts[day] || {};
-              return (
-                <div
-                  key={day + '_summary'}
-                  style={{
-                    flex: '1 1 200px',
-                    maxWidth: '280px',
-                    padding: '6px 10px',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    gap: '8px',
-                    fontSize: '0.63rem',
-                    fontWeight: 700,
-                    color: '#64748b',
-                    flexWrap: 'wrap'
-                  }}
-                >
-                  <span style={{ color: '#2563eb' }}>📚 {c.academic} Academic</span>
-                  <span style={{ color: '#d97706' }}>✨ {c.eca} ECA</span>
-                  <span style={{ color: '#94a3b8' }}>☕ {c.breaks} Breaks</span>
-                </div>
-              );
-            })}
-          </div>
+
         </div>
       )}
 
       {/* ── MODALS ── */}
-      {slotToEdit && (
-        <ManualEditModal
-          slot={slotToEdit}
-          subjects={schoolCtx.subjects || []}
-          faculties={faculties}
-          venues={venues}
-          onClose={() => setSlotToEdit(null)}
-          onSave={details => {
-            if (schoolCtx.updateTimetableSlot) {
-              schoolCtx.updateTimetableSlot(slotToEdit.id, details);
-            }
-            setSlotToEdit(null);
-          }}
-        />
-      )}
-
-      {slotToDelete && (
-        <ConfirmModal
-          isOpen={Boolean(slotToDelete)}
-          title="Delete Slot"
-          message={`Remove "${slotToDelete.subjectName}" from ${slotToDelete.day}?`}
-          confirmLabel="Delete"
-          confirmStyle="danger"
-          onConfirm={() => { handleConfirmDelete(); setSlotToDelete(null); }}
-          onCancel={() => setSlotToDelete(null)}
-        />
-      )}
 
       <ConfirmModal
         isOpen={isConfirmClearOpen}
         title="Clear Timetable"
         message={`This will delete the entire timetable for ${activeClass?.name || 'the selected class'}. Continue?`}
-        confirmLabel="Clear All"
-        confirmStyle="danger"
+        confirmText="Clear All"
         onConfirm={() => { handleConfirmClear(); setIsConfirmClearOpen(false); }}
-        onCancel={() => setIsConfirmClearOpen(false)}
+        onClose={() => setIsConfirmClearOpen(false)}
+      />
+
+      <ConfirmModal
+        isOpen={isAlreadyGeneratedModalOpen}
+        title="Timetable Already Generated"
+        message={`You have already generated a timetable for Grade ${activeGrade || ''} (${activeClass?.name || 'this class'}). You can clear the timetable first, then you can auto-generate.`}
+        confirmText="Clear Timetable"
+        cancelText="Cancel"
+        onConfirm={() => {
+          handleConfirmClear();
+          setIsAlreadyGeneratedModalOpen(false);
+        }}
+        onClose={() => setIsAlreadyGeneratedModalOpen(false)}
       />
     </div>
   );
