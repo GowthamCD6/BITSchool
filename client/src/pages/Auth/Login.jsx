@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSchool } from '../../context/SchoolContext';
 import { API_BASE_URL } from '../../utils/constants';
 import bitLogo from '../../assets/BIT-logo.png';
@@ -54,13 +54,14 @@ export default function Login() {
       setIsGoogleLoading(false);
 
       if (data.success) {
-        if (data.token) {
-          localStorage.setItem('bitschool_token', data.token);
-        }
-        login({
-          ...data.user,
-          picture: userPicture || data.user?.picture || data.user?.avatar
-        });
+        login(
+          {
+            ...data.user,
+            picture: userPicture || data.user?.picture || data.user?.avatar
+          },
+          data.accessToken || data.token,
+          data.refreshToken
+        );
       } else {
         setErrorMessage(data.message || `Access Denied: ${userEmail} is not registered in the system.`);
       }
@@ -86,9 +87,11 @@ export default function Login() {
     setErrorMessage('Google authentication token was invalid.');
   };
 
+  const gsiInitializedRef = useRef(false);
+
   useEffect(() => {
     /* global google */
-    if (window.google && window.google.accounts) {
+    if (window.google && window.google.accounts && !gsiInitializedRef.current) {
       try {
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
@@ -96,6 +99,7 @@ export default function Login() {
           auto_select: false,
           use_fedcm_for_prompt: false
         });
+        gsiInitializedRef.current = true;
 
         const hiddenBtn = document.getElementById('hiddenGoogleBtn');
         if (hiddenBtn) {
@@ -110,7 +114,7 @@ export default function Login() {
         console.warn('Google Identity Initialization Notice:', err);
       }
     }
-  }, []);
+  }, [GOOGLE_CLIENT_ID]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -134,10 +138,7 @@ export default function Login() {
       setIsLoading(false);
 
       if (data.success) {
-        if (data.token) {
-          localStorage.setItem('bitschool_token', data.token);
-        }
-        login(data.user);
+        login(data.user, data.accessToken || data.token, data.refreshToken);
       } else {
         setErrorMessage(data.message || 'Invalid credentials.');
       }

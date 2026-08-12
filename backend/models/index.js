@@ -63,6 +63,10 @@ export const User = sequelize.define('User', {
   avatarColor: {
     type: DataTypes.STRING(20),
     defaultValue: '#2563eb'
+  },
+  refreshToken: {
+    type: DataTypes.TEXT,
+    allowNull: true
   }
 }, {
   tableName: 'users',
@@ -659,6 +663,12 @@ export async function syncDatabase() {
   try {
     // Permanently drop legacy class_subjects table if present in MySQL
     await sequelize.query('DROP TABLE IF EXISTS class_subjects;');
+
+    // Ensure refreshToken column exists in users table
+    try {
+      await sequelize.query("ALTER TABLE users ADD COLUMN refreshToken TEXT NULL;");
+      console.log('[MySQL] Added refreshToken column to users table successfully.');
+    } catch (e) {}
 
     // Sync active models in order
     await Role.sync();

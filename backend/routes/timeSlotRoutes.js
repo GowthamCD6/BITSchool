@@ -7,16 +7,17 @@ import {
   getBellConfig,
   updateBellConfig
 } from '../controllers/timeSlotController.js';
+import { verifyToken, requireRole } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 router.get('/bell-config', getBellConfig);
-router.post('/bell-config', updateBellConfig);
-router.put('/bell-config', updateBellConfig);
+router.post('/bell-config', verifyToken, requireRole('Principal Administrator', 'Admin'), updateBellConfig);
+router.put('/bell-config', verifyToken, requireRole('Principal Administrator', 'Admin'), updateBellConfig);
 
 router.get('/', getTimeSlots);
-router.post('/', createTimeSlot);
-router.put('/:id', updateTimeSlot);
-router.delete('/:id', deleteTimeSlot);
+router.post('/', verifyToken, requireRole('Principal Administrator', 'Admin'), createTimeSlot);
+router.put('/:id', verifyToken, requireRole('Principal Administrator', 'Admin'), updateTimeSlot);
+router.delete('/:id', verifyToken, requireRole('Principal Administrator', 'Admin'), deleteTimeSlot);
 
 export default router;

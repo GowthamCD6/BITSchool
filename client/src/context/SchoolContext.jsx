@@ -40,6 +40,23 @@ function safeJSONParse(key, fallback) {
   }
 }
 
+function parseJwtPayload(token) {
+  try {
+    if (!token || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    return JSON.parse(atob(parts[1]));
+  } catch (err) {
+    return null;
+  }
+}
+
+function isTokenExpired(token) {
+  const payload = parseJwtPayload(token);
+  if (!payload || !payload.exp) return false;
+  return payload.exp * 1000 <= Date.now();
+}
+
 export function SchoolProvider({ children }) {
   // ── Authentication State ──
   const [isAuthenticated, setIsAuthenticated] = useState(() => safeJSONParse('bitschool_authenticated', true));
@@ -128,11 +145,11 @@ export function SchoolProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
 
-  // Safe helper to fetch JSON endpoints without throwing on blocked/offline endpoints
+  // Safe helper to fetch JSON endpoints with authentication without throwing on blocked/offline endpoints
   const safeFetchJSON = async (url) => {
     try {
-      const res = await fetch(url);
-      if (!res.ok) return null;
+      const res = await authenticatedFetch(url);
+      if (!res || !res.ok) return null;
       return await res.json();
     } catch (err) {
       console.warn(`Endpoint ${url} unavailable or blocked by network tab:`, err.message);
@@ -268,18 +285,161 @@ export function SchoolProvider({ children }) {
     localStorage.setItem('bitschool_user', JSON.stringify(currentUser));
   }, [currentUser]);
 
+  // ── JWT Dual-Token State ──
+  const [accessToken, setAccessToken] = useState(() => localStorage.getItem('bitschool_access_token') || '');
+  const [refreshToken, setRefreshToken] = useState(() => localStorage.getItem('bitschool_refresh_token') || '');
+
+  // ── Session Expiry Handler ──
+  const handleSessionExpired = (message = 'Your authentication session has expired. Please log in again.') => {
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setAccessToken('');
+    setRefreshToken('');
+    localStorage.removeItem('bitschool_authenticated');
+    localStorage.removeItem('bitschool_user');
+    localStorage.removeItem('bitschool_access_token');
+    localStorage.removeItem('bitschool_refresh_token');
+    localStorage.removeItem('bitschool_active_tab');
+    showToast(message, 'warning');
+  };
+
+  // ── Authenticated Fetch Wrapper with Auto-Refresh Interceptor ──
+  const authenticatedFetch = async (url, options = {}) => {
+    const currentToken = localStorage.getItem('bitschool_access_token') || accessToken;
+    const headers = {
+      ...options.headers,
+      ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
+    };
+
+    let response = await fetch(url, { ...options, headers });
+
+    // Automatic token refresh on 401 Unauthorized / Expired Access Token
+    if (response.status === 401) {
+      const savedRefreshToken = localStorage.getItem('bitschool_refresh_token') || refreshToken;
+      if (savedRefreshToken && !isTokenExpired(savedRefreshToken)) {
+        try {
+          const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: savedRefreshToken })
+          });
+          const refreshData = await refreshRes.json();
+
+          if (refreshData.success && refreshData.accessToken) {
+            const newAccess = refreshData.accessToken;
+            const newRefresh = refreshData.refreshToken || savedRefreshToken;
+
+            setAccessToken(newAccess);
+            setRefreshToken(newRefresh);
+            localStorage.setItem('bitschool_access_token', newAccess);
+            localStorage.setItem('bitschool_refresh_token', newRefresh);
+
+            const retryHeaders = {
+              ...options.headers,
+              'Authorization': `Bearer ${newAccess}`
+            };
+            response = await fetch(url, { ...options, headers: retryHeaders });
+          } else {
+            handleSessionExpired('Session expired. Please log in again.');
+          }
+        } catch (refreshErr) {
+          console.warn('Token auto-refresh failed:', refreshErr.message);
+          handleSessionExpired('Session expired. Please log in again.');
+        }
+      } else {
+        handleSessionExpired('Session expired. Please log in again.');
+      }
+    }
+
+    return response;
+  };
+
+  // ── Periodic Refresh Token & Session Expiration Monitor ──
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const checkSession = () => {
+      const savedRefreshToken = localStorage.getItem('bitschool_refresh_token') || refreshToken;
+      const savedAccessToken = localStorage.getItem('bitschool_access_token') || accessToken;
+
+      // 1. If refresh token is expired, force immediate auto-logout to Login page
+      if (savedRefreshToken && isTokenExpired(savedRefreshToken)) {
+        console.warn('[Auth Monitor]: Refresh token expired. Redirecting to Login.');
+        handleSessionExpired('Your authentication session has expired. Please sign in again.');
+        return;
+      }
+
+      // 2. If access token is expired but refresh token is valid, attempt silent background renewal
+      if (savedAccessToken && isTokenExpired(savedAccessToken) && savedRefreshToken && !isTokenExpired(savedRefreshToken)) {
+        console.log('[Auth Monitor]: Access token expired. Triggering silent background token renewal.');
+        fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: savedRefreshToken })
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data.success && data.accessToken) {
+              setAccessToken(data.accessToken);
+              if (data.refreshToken) setRefreshToken(data.refreshToken);
+              localStorage.setItem('bitschool_access_token', data.accessToken);
+              if (data.refreshToken) localStorage.setItem('bitschool_refresh_token', data.refreshToken);
+            } else {
+              handleSessionExpired('Session expired. Please log in again.');
+            }
+          })
+          .catch(() => {
+            handleSessionExpired('Session expired. Please log in again.');
+          });
+      }
+    };
+
+    // Run check on mount
+    checkSession();
+
+    // Monitor session state every 15 seconds
+    const interval = setInterval(checkSession, 15000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, refreshToken, accessToken]);
+
   // ── Auth Handlers ──
-  const login = (userData) => {
+  const login = (userData, newAccess = '', newRefresh = '') => {
     setCurrentUser(userData);
     setIsAuthenticated(true);
+    if (newAccess) {
+      setAccessToken(newAccess);
+      localStorage.setItem('bitschool_access_token', newAccess);
+    }
+    if (newRefresh) {
+      setRefreshToken(newRefresh);
+      localStorage.setItem('bitschool_refresh_token', newRefresh);
+    }
     showToast(`Welcome back, ${userData.name}! Logged in as ${userData.role}.`);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const currentAccess = localStorage.getItem('bitschool_access_token') || accessToken;
     setIsAuthenticated(false);
+    setCurrentUser(null);
+    setAccessToken('');
+    setRefreshToken('');
+    localStorage.removeItem('bitschool_authenticated');
+    localStorage.removeItem('bitschool_user');
+    localStorage.removeItem('bitschool_access_token');
+    localStorage.removeItem('bitschool_refresh_token');
     localStorage.removeItem('bitschool_active_tab');
-    setActiveTabState('dashboard');
-    showToast('Signed out successfully.', 'warning');
+
+    if (currentAccess) {
+      try {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${currentAccess}` }
+        });
+      } catch (err) {
+        console.warn('Logout notification error:', err.message);
+      }
+    }
+    showToast('Logged out successfully.', 'info');
   };
 
   useEffect(() => {
@@ -302,7 +462,7 @@ export function SchoolProvider({ children }) {
     };
     setEcaSchedule(nextEcaSchedule);
     try {
-      await fetch(`${API_BASE_URL}/eca/cell`, {
+      await authenticatedFetch(`${API_BASE_URL}/eca/cell`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ day, vertical, grade, ...newCellData })
@@ -361,7 +521,7 @@ export function SchoolProvider({ children }) {
       });
 
       try {
-        const res = await fetch(`${API_BASE_URL}/eca/vertical`, {
+        const res = await authenticatedFetch(`${API_BASE_URL}/eca/vertical`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: cleanVertical, gradeIds })
@@ -392,7 +552,7 @@ export function SchoolProvider({ children }) {
     });
 
     try {
-      const res = await fetch(`${API_BASE_URL}/eca/vertical`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/eca/vertical`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: cleanVertical, gradeIds })
@@ -421,7 +581,7 @@ export function SchoolProvider({ children }) {
       return next;
     });
     try {
-      await fetch(`${API_BASE_URL}/eca/vertical/${encodeURIComponent(verticalName)}`, {
+      await authenticatedFetch(`${API_BASE_URL}/eca/vertical/${encodeURIComponent(verticalName)}`, {
         method: 'DELETE'
       });
     } catch (err) {
@@ -534,7 +694,7 @@ export function SchoolProvider({ children }) {
 
     // Persist all generated slots to MySQL backend database
     try {
-      await fetch(`${API_BASE_URL}/timetables/save`, {
+      await authenticatedFetch(`${API_BASE_URL}/timetables/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slots: result.timetable })
@@ -555,7 +715,7 @@ export function SchoolProvider({ children }) {
     });
 
     try {
-      await fetch(`${API_BASE_URL}/timetables/all`, { method: 'DELETE' });
+      await authenticatedFetch(`${API_BASE_URL}/timetables/all`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Failed to delete timetable slots from MySQL DB:', err.message);
     }
@@ -580,7 +740,7 @@ export function SchoolProvider({ children }) {
     showToast(`Faculty member "${itemWithId.name}" added successfully.`);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/faculties`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/faculties`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -599,7 +759,7 @@ export function SchoolProvider({ children }) {
     showToast(`Faculty profile updated for ${updatedFaculty.name}.`);
 
     try {
-      await fetch(`${API_BASE_URL}/faculties/${updatedFaculty.id}`, {
+      await authenticatedFetch(`${API_BASE_URL}/faculties/${updatedFaculty.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFaculty)
@@ -615,7 +775,7 @@ export function SchoolProvider({ children }) {
     showToast(`Faculty ${f?.name || ''} removed.`, 'warning');
 
     try {
-      await fetch(`${API_BASE_URL}/faculties/${facultyId}`, { method: 'DELETE' });
+      await authenticatedFetch(`${API_BASE_URL}/faculties/${facultyId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -631,7 +791,7 @@ export function SchoolProvider({ children }) {
     showToast(`Venue "${itemWithId.roomNo} - ${itemWithId.name}" added.`);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/venues`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/venues`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -650,7 +810,7 @@ export function SchoolProvider({ children }) {
     showToast(`Venue details updated for ${updatedVenue.roomNo}.`);
 
     try {
-      await fetch(`${API_BASE_URL}/venues/${updatedVenue.id}`, {
+      await authenticatedFetch(`${API_BASE_URL}/venues/${updatedVenue.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedVenue)
@@ -666,7 +826,7 @@ export function SchoolProvider({ children }) {
     showToast(`Venue ${v?.roomNo || ''} removed.`, 'warning');
 
     try {
-      await fetch(`${API_BASE_URL}/venues/${venueId}`, { method: 'DELETE' });
+      await authenticatedFetch(`${API_BASE_URL}/venues/${venueId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -682,7 +842,7 @@ export function SchoolProvider({ children }) {
     showToast(`Class "${itemWithId.name}" created.`);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/classes`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/classes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -701,7 +861,7 @@ export function SchoolProvider({ children }) {
     showToast(`Class "${updatedClass.name}" updated.`);
 
     try {
-      await fetch(`${API_BASE_URL}/classes/${updatedClass.id}`, {
+      await authenticatedFetch(`${API_BASE_URL}/classes/${updatedClass.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedClass)
@@ -717,7 +877,7 @@ export function SchoolProvider({ children }) {
     showToast(`Class "${c?.name || ''}" removed.`, 'warning');
 
     try {
-      await fetch(`${API_BASE_URL}/classes/${classId}`, { method: 'DELETE' });
+      await authenticatedFetch(`${API_BASE_URL}/classes/${classId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -733,7 +893,7 @@ export function SchoolProvider({ children }) {
     showToast(`Subject "${itemWithId.name}" (${itemWithId.code}) added.`);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/courses`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/courses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -752,7 +912,7 @@ export function SchoolProvider({ children }) {
     showToast(`Subject "${updatedSubj.name}" updated.`);
 
     try {
-      await fetch(`${API_BASE_URL}/courses/${updatedSubj.id}`, {
+      await authenticatedFetch(`${API_BASE_URL}/courses/${updatedSubj.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedSubj)
@@ -768,7 +928,7 @@ export function SchoolProvider({ children }) {
     showToast(`Subject "${s?.name || ''}" removed.`, 'warning');
 
     try {
-      await fetch(`${API_BASE_URL}/courses/${subjectId}`, { method: 'DELETE' });
+      await authenticatedFetch(`${API_BASE_URL}/courses/${subjectId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -784,7 +944,7 @@ export function SchoolProvider({ children }) {
     showToast(`Grade level "${itemWithId.name}" saved.`);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/grades`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/grades`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -804,7 +964,7 @@ export function SchoolProvider({ children }) {
     showToast(`Grade level updated.`);
 
     try {
-      await fetch(`${API_BASE_URL}/grades/${id}`, {
+      await authenticatedFetch(`${API_BASE_URL}/grades/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(gradeData)
@@ -820,7 +980,7 @@ export function SchoolProvider({ children }) {
     showToast(`Grade level "${target?.name || ''}" removed.`, 'warning');
 
     try {
-      await fetch(`${API_BASE_URL}/grades/${id}`, { method: 'DELETE' });
+      await authenticatedFetch(`${API_BASE_URL}/grades/${id}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -836,7 +996,7 @@ export function SchoolProvider({ children }) {
     showToast(`Time slot "${itemWithId.name}" added successfully.`);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/time-slots`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/time-slots`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemWithId)
@@ -855,7 +1015,7 @@ export function SchoolProvider({ children }) {
     showToast(`Time slot "${updatedSlot.name}" updated.`);
 
     try {
-      await fetch(`${API_BASE_URL}/time-slots/${updatedSlot.id}`, {
+      await authenticatedFetch(`${API_BASE_URL}/time-slots/${updatedSlot.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedSlot)
@@ -871,7 +1031,7 @@ export function SchoolProvider({ children }) {
     showToast(`Time slot "${target?.name || ''}" deleted.`, 'warning');
 
     try {
-      await fetch(`${API_BASE_URL}/time-slots/${slotId}`, { method: 'DELETE' });
+      await authenticatedFetch(`${API_BASE_URL}/time-slots/${slotId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network delete notice:', err.message);
     }
@@ -882,7 +1042,7 @@ export function SchoolProvider({ children }) {
     showToast('Bell Schedule parameters saved successfully.');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/time-slots/bell-config`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/time-slots/bell-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newConfig)
@@ -930,7 +1090,7 @@ export function SchoolProvider({ children }) {
 
     if (updatedSlotObj) {
       try {
-        await fetch(`${API_BASE_URL}/timetables/slot/${encodeURIComponent(slotId)}`, {
+        await authenticatedFetch(`${API_BASE_URL}/timetables/slot/${encodeURIComponent(slotId)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedSlotObj)
@@ -951,7 +1111,7 @@ export function SchoolProvider({ children }) {
     });
 
     try {
-      await fetch(`${API_BASE_URL}/timetables/slot/${encodeURIComponent(slotId)}`, {
+      await authenticatedFetch(`${API_BASE_URL}/timetables/slot/${encodeURIComponent(slotId)}`, {
         method: 'DELETE'
       });
     } catch (err) {
@@ -977,7 +1137,7 @@ export function SchoolProvider({ children }) {
 
     try {
       const endpointTarget = classId !== 'ALL' ? classId : (gradeFilter !== 'ALL' ? `grade_${gradeFilter}` : 'all');
-      await fetch(`${API_BASE_URL}/timetables/${encodeURIComponent(endpointTarget)}`, { method: 'DELETE' });
+      await authenticatedFetch(`${API_BASE_URL}/timetables/${encodeURIComponent(endpointTarget)}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Failed to clear timetable from MySQL DB:', err.message);
     }
@@ -989,7 +1149,7 @@ export function SchoolProvider({ children }) {
   // ── User Management CRUD (MySQL API) ──
   const addUser = async (newUser) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/users`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newUser)
@@ -1016,7 +1176,7 @@ export function SchoolProvider({ children }) {
 
   const updateUser = async (updatedUser) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${updatedUser.id}`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/users/${updatedUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedUser)
@@ -1041,7 +1201,7 @@ export function SchoolProvider({ children }) {
     showToast(`User "${target?.name || 'Account'}" removed.`);
 
     try {
-      await fetch(`${API_BASE_URL}/users/${userId}`, { method: 'DELETE' });
+      await authenticatedFetch(`${API_BASE_URL}/users/${userId}`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Network user delete notice:', err.message);
     }

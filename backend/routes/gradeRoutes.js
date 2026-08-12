@@ -5,12 +5,13 @@ import {
   updateGrade,
   deleteGrade
 } from '../controllers/gradeController.js';
+import { verifyToken, requireRole } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 router.get('/', getGrades);
-router.post('/', createGrade);
-router.put('/:id', updateGrade);
-router.delete('/:id', deleteGrade);
+router.post('/', verifyToken, requireRole('Principal Administrator', 'Admin'), createGrade);
+router.put('/:id', verifyToken, requireRole('Principal Administrator', 'Admin'), updateGrade);
+router.delete('/:id', verifyToken, requireRole('Principal Administrator', 'Admin'), deleteGrade);
 
 export default router;

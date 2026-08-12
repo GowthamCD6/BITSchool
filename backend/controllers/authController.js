@@ -2,7 +2,21 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { User, Role } from '../models/index.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'bitschool_secret_key_2026_super_secure';
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'bitschool_access_secret_key_2026_super_secure';
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'bitschool_refresh_secret_key_2026_super_secure';
+
+const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
+const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+
+// Helper: Generate Access Token (15m)
+const generateAccessToken = (userData) => {
+  return jwt.sign(userData, JWT_ACCESS_SECRET, { expiresIn: JWT_ACCESS_EXPIRES_IN });
+};
+
+// Helper: Generate Refresh Token (7d)
+const generateRefreshToken = (userData) => {
+  return jwt.sign({ id: userData.id, regNo: userData.regNo }, JWT_REFRESH_SECRET, { expiresIn: JWT_REFRESH_EXPIRES_IN });
+};
 
 // ============================================================
 // 1. REGISTRATION NUMBER / PASSWORD LOGIN (AUTHENTICATE FROM DB)
@@ -40,7 +54,7 @@ export const loginUser = async (req, res) => {
       });
     }
 
-    // 🔑 Construct Authenticated User Payload from Database
+    // 🔑 Construct Authenticated User Payload
     const userData = {
       id: user.id,
       name: user.name,
@@ -50,12 +64,19 @@ export const loginUser = async (req, res) => {
       avatarColor: user.avatarColor || '#2563eb'
     };
 
-    const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '7d' });
+    // Generate Dual Tokens
+    const accessToken = generateAccessToken(userData);
+    const refreshToken = generateRefreshToken(userData);
+
+    // Store Refresh Token in MySQL DB
+    await user.update({ refreshToken });
 
     return res.status(200).json({
       success: true,
       message: 'Login successful via MySQL Database.',
-      token,
+      accessToken,
+      refreshToken,
+      token: accessToken, // Backward compatibility
       user: userData
     });
   } catch (error) {
@@ -83,7 +104,7 @@ export const googleLogin = async (req, res) => {
 
     const targetEmail = email.trim().toLowerCase();
 
-    // 🔍 Query MySQL User Table by Email (Strict check: only allowed if email exists in database!)
+    // 🔍 Query MySQL User Table by Email
     const user = await User.findOne({
       where: { email: targetEmail },
       include: [{ model: Role, as: 'role', attributes: ['id', 'name'] }]
@@ -96,7 +117,6 @@ export const googleLogin = async (req, res) => {
       });
     }
 
-    // 🔑 Construct Authenticated User Payload from Database
     const userData = {
       id: user.id,
       name: user.name,
@@ -106,12 +126,17 @@ export const googleLogin = async (req, res) => {
       avatarColor: user.avatarColor || '#2563eb'
     };
 
-    const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '7d' });
+    const accessToken = generateAccessToken(userData);
+    const refreshToken = generateRefreshToken(userData);
+
+    await user.update({ refreshToken });
 
     return res.status(200).json({
       success: true,
       message: 'Google Authentication Successful via MySQL.',
-      token,
+      accessToken,
+      refreshToken,
+      token: accessToken,
       user: userData
     });
   } catch (error) {
@@ -124,49 +149,117 @@ export const googleLogin = async (req, res) => {
 };
 
 // ============================================================
-// 3. GET LOGGED IN USER DETAILS
+// 3. REFRESH ACCESS TOKEN
 // ============================================================
-export const getMe = async (req, res) => {
+export const refreshToken = async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
+    const { refreshToken: incomingToken } = req.body;
+
+    if (!incomingToken) {
+      return res.status(400).json({
         success: false,
-        message: 'Authorization header missing or invalid.'
+        message: 'Refresh Token is required.'
       });
     }
 
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
+    // Verify Refresh Token signature
+    let decoded;
+    try {
+      decoded = jwt.verify(incomingToken, JWT_REFRESH_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired Refresh Token. Please log in again.'
+      });
+    }
 
-    // Verify user exists in database
-    const dbUser = await User.findOne({
+    // Verify User & DB Token Match
+    const user = await User.findOne({
       where: { id: decoded.id },
       include: [{ model: Role, as: 'role', attributes: ['id', 'name'] }]
     });
 
-    if (!dbUser) {
-      return res.status(404).json({
+    if (!user || user.refreshToken !== incomingToken) {
+      return res.status(401).json({
         success: false,
-        message: 'User account not found.'
+        message: 'Refresh Token revoked or invalid.'
+      });
+    }
+
+    const userData = {
+      id: user.id,
+      name: user.name,
+      regNo: user.regNo,
+      email: user.email,
+      role: user.role ? user.role.name : 'Principal Administrator',
+      avatarColor: user.avatarColor || '#2563eb'
+    };
+
+    // Issue new tokens (Token Rotation)
+    const newAccessToken = generateAccessToken(userData);
+    const newRefreshToken = generateRefreshToken(userData);
+
+    await user.update({ refreshToken: newRefreshToken });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Access Token refreshed successfully.',
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      token: newAccessToken
+    });
+  } catch (error) {
+    console.error('[Refresh Token Error]:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error during token refresh.'
+    });
+  }
+};
+
+// ============================================================
+// 4. LOGOUT USER (REVOKE REFRESH TOKEN)
+// ============================================================
+export const logoutUser = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (userId) {
+      await User.update({ refreshToken: null }, { where: { id: userId } });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully. Refresh Token revoked.'
+    });
+  } catch (error) {
+    console.error('[Logout Error]:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error during logout.'
+    });
+  }
+};
+
+// ============================================================
+// 5. GET LOGGED IN USER DETAILS
+// ============================================================
+export const getMe = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized.'
       });
     }
 
     return res.status(200).json({
       success: true,
-      user: {
-        id: dbUser.id,
-        name: dbUser.name,
-        regNo: dbUser.regNo,
-        email: dbUser.email,
-        role: dbUser.role ? dbUser.role.name : 'Principal Administrator',
-        avatarColor: dbUser.avatarColor
-      }
+      user: req.user
     });
   } catch (error) {
-    return res.status(401).json({
+    return res.status(500).json({
       success: false,
-      message: 'Invalid or expired token.'
+      message: 'Server error fetching user details.'
     });
   }
 };
